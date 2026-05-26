@@ -84,6 +84,52 @@ def test_expected_draws_finite():
     assert 0 < e < float("inf")
 
 
+def test_expected_draws_multi_tile_uses_negative_hypergeometric():
+    # Need 2 tiles (R2, R3). Only R1 is known.
+    # Pool 105, useful = 2 copies of R2 + 2 copies of R3 = 4.
+    # E[draws to collect r=2 useful] = r * (N+1) / (K+1) = 2 * 106 / 5 = 42.4.
+    # The pre-fix formula returned (N+1)/(K+1) ≈ 21 — half the correct value.
+    partial = [t(1, R)]
+    target = [t(1, R), t(2, R), t(3, R)]
+    e = expected_draws_to_complete(partial, target, [t(1, R)])
+    assert e == pytest.approx(42.4, abs=0.1)
+
+
+def test_expected_draws_single_tile_unchanged():
+    # For r=1 needed tile, the formula reduces to (N+1)/(K+1).
+    partial = [t(1, R), t(2, R)]
+    target = [t(1, R), t(2, R), t(3, R)]
+    e = expected_draws_to_complete(partial, target, [t(1, R), t(2, R)])
+    # Pool 104, useful = 2 copies of R3. E = 1 * 105 / 3 = 35.
+    assert e == pytest.approx(35.0, abs=0.1)
+
+
+def test_expected_draws_infinite_when_pool_lacks_tiles():
+    partial = [t(1, R), t(2, R)]
+    target = [t(1, R), t(2, R), t(3, R)]
+    # Both R3s are already seen
+    known = [t(1, R), t(2, R), t(3, R), t(3, R)]
+    e = expected_draws_to_complete(partial, target, known)
+    assert e == float("inf")
+
+
+def test_unseen_pool_with_custom_full_pool():
+    # Restricted pool: no 13s.
+    from rumicub.tile import TileSet
+    restricted = TileSet.restricted(excluded_numbers={13})
+    pool = unseen_pool([], full_pool=restricted)
+    assert len(pool) == len(restricted)
+    assert all(t.number != 13 for t in pool if not t.is_joker)
+
+
+def test_prob_draw_specific_respects_custom_pool():
+    from rumicub.tile import TileSet
+    restricted = TileSet.restricted(excluded_colors={Color.RED})
+    # Drawing a red tile from a no-red pool should be impossible.
+    p = prob_draw_specific(t(7, R), [], full_pool=restricted)
+    assert p == Fraction(0)
+
+
 def test_prob_complete_in_k_already_done():
     partial = [t(1, R), t(2, R), t(3, R)]
     p = prob_complete_in_k_draws(partial, partial, [], k=1)

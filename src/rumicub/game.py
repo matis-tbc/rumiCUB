@@ -105,6 +105,10 @@ class Game:
         self._rng = random.Random(seed)
 
         pool = custom_pool if custom_pool is not None else TileSet.standard()
+        # Snapshot the full universe BEFORE shuffling and dealing — probability
+        # functions need this to know what tiles could possibly exist, not just
+        # what's currently in the draw pool.
+        self.full_pool: list[Tile] = list(pool)
         self._rng.shuffle(pool)
 
         self.players: list[Player] = [Player(name=n) for n in player_names]

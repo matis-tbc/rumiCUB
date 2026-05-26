@@ -3,11 +3,16 @@ Probability engine for rumiCUB.
 
 All calculations assume the unknown tiles are uniformly distributed among the
 remaining (unseen) pool.  Pass `known_tiles` = hand + all visible board tiles.
+
+For non-standard tile pools (restricted variants, custom copy counts),
+pass `full_pool=` to every public function so probabilities are computed
+against the correct universe.
 """
 from __future__ import annotations
 from collections import defaultdict
 from fractions import Fraction
 from math import comb
+from typing import Optional
 
 from ..tile import Tile, Color, TileSet, MIN_NUMBER, MAX_NUMBER
 from ..rules import RuleSet, STANDARD_RULES
@@ -15,9 +20,17 @@ from ..rules import RuleSet, STANDARD_RULES
 
 # ── Pool helpers ───────────────────────────────────────────────────────────────
 
-def unseen_pool(known_tiles: list[Tile]) -> list[Tile]:
-    """Return tiles not yet observed (hand + board)."""
-    pool = TileSet.standard()
+def unseen_pool(
+    known_tiles: list[Tile], full_pool: Optional[list[Tile]] = None
+) -> list[Tile]:
+    """
+    Return tiles not yet observed (hand + board).
+
+    full_pool: the complete tile pool the game was set up with.  Defaults to
+    TileSet.standard() for backward compat, but Game should always pass its
+    actual pool so restricted variants get correct probabilities.
+    """
+    pool = list(full_pool) if full_pool is not None else TileSet.standard()
     seen = list(known_tiles)
     result = []
     for tile in pool:
@@ -34,9 +47,11 @@ def unseen_pool(known_tiles: list[Tile]) -> list[Tile]:
 
 # ── Single-draw probabilities ──────────────────────────────────────────────────
 
-def prob_draw_specific(target: Tile, known_tiles: list[Tile]) -> Fraction:
+def prob_draw_specific(
+    target: Tile, known_tiles: list[Tile], full_pool: Optional[list[Tile]] = None
+) -> Fraction:
     """P(next draw == target) given known tiles."""
-    pool = unseen_pool(known_tiles)
+    pool = unseen_pool(known_tiles, full_pool)
     if not pool:
         return Fraction(0)
     matching = sum(
@@ -46,9 +61,11 @@ def prob_draw_specific(target: Tile, known_tiles: list[Tile]) -> Fraction:
     return Fraction(matching, len(pool))
 
 
-def prob_draw_any_of(targets: list[Tile], known_tiles: list[Tile]) -> Fraction:
+def prob_draw_any_of(
+    targets: list[Tile], known_tiles: list[Tile], full_pool: Optional[list[Tile]] = None
+) -> Fraction:
     """P(next draw is one of `targets`)."""
-    pool = unseen_pool(known_tiles)
+    pool = unseen_pool(known_tiles, full_pool)
     if not pool:
         return Fraction(0)
     target_keys = {(t.number, t.color, t.is_joker) for t in targets}
@@ -78,24 +95,35 @@ def expected_draws_to_complete(
     partial: list[Tile],
     target: list[Tile],
     known_tiles: list[Tile],
+    full_pool: Optional[list[Tile]] = None,
 ) -> float:
     """
-    Expected number of draws until the partial meld becomes complete,
-    using a negative-hypergeometric approximation (sampling without replacement).
+    Expected number of draws to collect ALL needed tiles for the meld,
+    using the negative hypergeometric distribution.
+
+    Formula: with N total unseen tiles and K "useful" tiles (any tile that
+    completes the meld), the expected number of draws until r=need_count
+    successes have been observed is:
+
+        E[X] = r * (N + 1) / (K + 1)
+
+    This is the exact closed form for the negative hypergeometric expectation
+    (sampling without replacement). For r=1 it reduces to the prior formula;
+    for r=2+ it's much larger than the prior single-tile estimate.
     """
     needed = tiles_needed_to_complete(partial, target)
     if not needed:
         return 0.0
-    pool = unseen_pool(known_tiles)
+    pool = unseen_pool(known_tiles, full_pool)
     if not pool:
         return float("inf")
     needed_keys = {(t.number, t.color, t.is_joker) for t in needed}
     useful = sum(1 for t in pool if (t.number, t.color, t.is_joker) in needed_keys)
-    if useful == 0:
+    need_count = len(needed)
+    if useful < need_count:
         return float("inf")
-    # E[draws] for first success in hypergeometric draw: (N+1)/(K+1) - 1
-    N, K = len(pool), useful
-    return (N + 1) / (K + 1)
+    N, K, r = len(pool), useful, need_count
+    return r * (N + 1) / (K + 1)
 
 
 def prob_complete_in_k_draws(
@@ -103,12 +131,13 @@ def prob_complete_in_k_draws(
     target: list[Tile],
     known_tiles: list[Tile],
     k: int,
+    full_pool: Optional[list[Tile]] = None,
 ) -> Fraction:
     """P(completing `target` within `k` draws) via hypergeometric CDF."""
     needed = tiles_needed_to_complete(partial, target)
     if not needed:
         return Fraction(1)
-    pool = unseen_pool(known_tiles)
+    pool = unseen_pool(known_tiles, full_pool)
     N = len(pool)
     needed_keys = {(t.number, t.color, t.is_joker) for t in needed}
     K = sum(1 for t in pool if (t.number, t.color, t.is_joker) in needed_keys)
@@ -148,12 +177,14 @@ def number_distribution(tiles: list[Tile]) -> dict[int, int]:
     return dict(dist)
 
 
-def tile_scarcity(known_tiles: list[Tile]) -> dict[str, float]:
+def tile_scarcity(
+    known_tiles: list[Tile], full_pool: Optional[list[Tile]] = None
+) -> dict[str, float]:
     """
     For each tile type, what fraction of its copies have been seen?
     High scarcity = most copies accounted for, drawing one is unlikely.
     """
-    pool_full = TileSet.standard()
+    pool_full = list(full_pool) if full_pool is not None else TileSet.standard()
     total_counts: dict[tuple, int] = defaultdict(int)
     for t in pool_full:
         total_counts[(t.number, t.color, t.is_joker)] += 1

@@ -195,3 +195,45 @@ def test_propose_play_invalid_and_abandon():
     proposal.abandon()
     assert game.board == []  # unchanged
     assert not player.has_opened
+
+
+# ── full_pool snapshot ─────────────────────────────────────────────────────────
+
+def test_game_snapshots_full_pool():
+    # The Game must remember the universe of tiles, not just the draw pile,
+    # so probability functions can reason about the correct space.
+    game = Game(["A", "B"], seed=0)
+    assert len(game.full_pool) == 106
+    # After dealing, full_pool stays at 106 while pool drops by 28 (2 * 14).
+    assert len(game.pool) == 106 - 28
+
+
+def test_game_full_pool_respects_custom():
+    from rumicub.tile import TileSet
+    restricted = TileSet.restricted(excluded_numbers={13})
+    universe_size = len(restricted)   # snapshot before Game pops tiles for deal
+    game = Game(["A", "B"], seed=0, custom_pool=restricted)
+    assert len(game.full_pool) == universe_size
+    assert all(t.number != 13 for t in game.full_pool if not t.is_joker)
+
+
+# ── C1: advisor uses true joker value for opening check ───────────────────────
+
+def test_advisor_does_not_recommend_invalid_opening_with_joker():
+    """Previously: advise() inflated joker=30 and recommended invalid openings.
+    Now: opening check uses meld_value_accurate (joker = represented value)."""
+    from rumicub.analysis.strategy import advise
+    # Hand: [J, R2, R3] -- joker fills as 4 (extends high). Accurate value=9.
+    # Validator rejects opening below 30; advisor must agree.
+    hand = [JOKER, t(2, R), t(3, R)]
+    advice = advise(hand, board=[], has_opened=False)
+    assert advice.action == "draw"
+    assert "true value" in advice.reasoning.lower() or "9" in advice.reasoning
+
+
+def test_advisor_recommends_legitimate_opening():
+    from rumicub.analysis.strategy import advise
+    hand = [t(10, R), t(11, R), t(12, R)] + [t(1, B)] * 11
+    advice = advise(hand, board=[], has_opened=False)
+    assert advice.action == "play"
+    assert advice.points == 33   # true value, no joker
