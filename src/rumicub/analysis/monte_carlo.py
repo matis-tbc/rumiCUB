@@ -12,7 +12,7 @@ Use cases:
 """
 from __future__ import annotations
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from math import sqrt
 from typing import Optional
 
@@ -69,7 +69,17 @@ def simulate_game(
     """
     Play one game between bot_a (seat 0) and bot_b (seat 1).
     Returns a GameResult.
+
+    Raises ValueError if both bots have the same `name` (would collide in
+    Game's name-keyed scoring dict). Disambiguate the bots' `name` attrs
+    before calling.
     """
+    if bot_a.name == bot_b.name:
+        raise ValueError(
+            f"Both bots have name {bot_a.name!r}; player names must be "
+            "unique. Set distinct .name attributes (e.g. 'solver_p1' / "
+            "'solver_p2') before passing them in."
+        )
     bots = [bot_a, bot_b]
     game = Game(
         player_names=[bot_a.name, bot_b.name],
@@ -80,7 +90,7 @@ def simulate_game(
 
     turns = 0
     while not game.is_over and turns < max_turns:
-        bot = bots[game._current_idx]
+        bot = bots[game.current_player_index]
         action = bot.choose_action(game)
 
         if isinstance(action, DrawAction):

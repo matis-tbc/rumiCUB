@@ -164,3 +164,25 @@ def test_ilp_solve_under_budget(solver):
     ilp = solver.solve(hand, board)
     assert ilp.solve_time_ms < 5000  # 5s — process spawn + solve
     assert ilp.status == "Optimal"
+
+
+def test_ilp_preserves_board_when_hand_empty(solver):
+    """Edge case: empty hand + intact board → board unchanged, no tiles played.
+    Critical: the board's tiles must not vanish from board_after."""
+    hand = []
+    board = [[t(1, R), t(2, R), t(3, R)]]
+    ilp = solver.solve(hand, board)
+    assert ilp.tiles_played == 0
+    # The critical assertion: board tiles must remain on board.
+    assert len(ilp.board_after) == 1
+    assert sorted(repr(x) for x in ilp.board_after[0]) == sorted(repr(x) for x in board[0])
+
+
+def test_ilp_preserves_board_when_no_candidates_at_all(solver):
+    """Forcing the no-candidates path: empty hand AND empty board → returns
+    cleanly without losing anything."""
+    ilp = solver.solve([], [])
+    assert ilp.status == "NoCandidates"
+    assert ilp.tiles_played == 0
+    assert ilp.board_after == []
+    assert ilp.hand_after == []

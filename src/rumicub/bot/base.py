@@ -8,9 +8,10 @@ and applies the result.
 from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Literal
+from typing import Union
 
 from ..game import Game
+from ..tile import Tile
 
 
 @dataclass(frozen=True)
@@ -20,10 +21,10 @@ class DrawAction:
 
 @dataclass(frozen=True)
 class PlayAction:
-    new_board: list[list]   # list[list[Tile]]
+    new_board: list[list[Tile]]
 
 
-Action = "DrawAction | PlayAction"
+Action = Union[DrawAction, PlayAction]
 
 
 class Bot(ABC):
@@ -32,5 +33,5 @@ class Bot(ABC):
     name: str = "bot"
 
     @abstractmethod
-    def choose_action(self, game: Game) -> "DrawAction | PlayAction":
+    def choose_action(self, game: Game) -> Action:
         ...

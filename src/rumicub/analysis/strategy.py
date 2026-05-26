@@ -227,7 +227,6 @@ def can_open_now(
     optimal = find_optimal_play(hand, board=[], rules=rules)
     if optimal["tiles_played"] == 0:
         return False, 0
-    from ..rules import meld_value_accurate
     opening_pts = sum(meld_value_accurate(m) for m in optimal["melds_to_place"])
     return opening_pts >= rules.initial_meld_min_points, opening_pts
 
@@ -248,7 +247,6 @@ def prob_can_open_within_k_draws(
     combinatorially huge state space.
     """
     import random
-    from ..rules import meld_value_accurate
 
     can_now, value_now = can_open_now(hand, rules)
     if can_now:
@@ -289,7 +287,6 @@ def hand_quality_score(
                         — this is what you lose if you don't finish
       partial_count     number of distinct 2-tile partials in hand
     """
-    from ..rules import meld_value_accurate
 
     can_now, value_now = can_open_now(hand, rules)
     optimal = find_optimal_play(hand, board=[], rules=rules)
