@@ -19,9 +19,7 @@ meld must remain a subset of some chosen new meld).
 """
 from __future__ import annotations
 import time
-from collections import Counter
-from dataclasses import dataclass, field
-from typing import Optional
+from dataclasses import dataclass
 
 try:
     import pulp
@@ -42,8 +40,8 @@ def _require_pulp() -> None:
         )
 
 
-from ..tile import Tile, JOKER
-from ..rules import RuleSet, STANDARD_RULES, meld_value_accurate, is_valid_meld
+from ..tile import Tile
+from ..rules import RuleSet, STANDARD_RULES, meld_value_accurate
 from .candidates import enumerate_candidate_melds
 from .validator import validate_turn
 
@@ -122,7 +120,6 @@ class BoardManipulator:
         # Pre-compute meld stats
         meld_tile_counts = [_tile_counts(m) for m in candidates]
         meld_values = [meld_value_accurate(m) for m in candidates]
-        meld_sizes = [len(m) for m in candidates]
         # How many hand tiles each meld uses — counted by capping per-tile
         # usage at hand availability (the rest must come from board).
         # NOTE: this is an UPPER BOUND on hand tiles a meld can pull from hand;
@@ -185,11 +182,29 @@ class BoardManipulator:
         status = pulp.LpStatus[prob.status]
 
         # ── Extract solution ─────────────────────────────────────────────
+        solver_succeeded = status == "Optimal"
         new_board: list[list[Tile]] = []
-        if status in ("Optimal", "Not Solved"):
+        if solver_succeeded:
             for i, var in enumerate(x):
                 if var.value() is not None and var.value() > 0.5:
                     new_board.append([t for t in candidates[i]])
+
+        # On any non-optimal status (Infeasible, Undefined, time-limit hit
+        # without a feasible incumbent), fall back to the input board
+        # unchanged. Otherwise we'd silently drop the board's tiles and the
+        # validator would fail on tile-conservation downstream.
+        if not solver_succeeded:
+            elapsed_ms = (time.perf_counter() - start) * 1000
+            return BoardSolution(
+                board_after=list(board),
+                hand_after=hand_tiles,
+                tiles_played=0,
+                points_true=0,
+                solve_time_ms=elapsed_ms,
+                candidate_count=cand_count,
+                objective_value=pulp.value(prob.objective) or 0.0,
+                status=status,
+            )
 
         # Reconstruct hand_after: tiles that were in hand but not used by any
         # selected meld stay in hand. We need to figure out which physical
@@ -209,7 +224,9 @@ class BoardManipulator:
             meld_value_accurate(m) for m in board
         )
 
-        # Cross-check via validator: solver output should always pass
+        # Cross-check via validator: solver output should always pass.
+        # If it doesn't, we've got a model bug — return the original board
+        # rather than a known-invalid one, and tag status accordingly.
         ok, reason = validate_turn(
             hand_before=hand_tiles,
             board_before=list(board),
@@ -219,7 +236,17 @@ class BoardManipulator:
             rules=self.rules,
         )
         if not ok:
-            status = f"InvalidSolution: {reason}"
+            elapsed_ms = (time.perf_counter() - start) * 1000
+            return BoardSolution(
+                board_after=list(board),
+                hand_after=hand_tiles,
+                tiles_played=0,
+                points_true=0,
+                solve_time_ms=elapsed_ms,
+                candidate_count=cand_count,
+                objective_value=pulp.value(prob.objective) or 0.0,
+                status=f"InvalidSolution: {reason}",
+            )
 
         elapsed_ms = (time.perf_counter() - start) * 1000
         return BoardSolution(

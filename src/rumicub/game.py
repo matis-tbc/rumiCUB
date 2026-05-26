@@ -133,6 +133,11 @@ class Game:
         return self.players[self._current_idx]
 
     @property
+    def current_player_index(self) -> int:
+        """Index of the player whose turn it currently is."""
+        return self._current_idx
+
+    @property
     def is_over(self) -> bool:
         return self._over
 

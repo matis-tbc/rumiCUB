@@ -14,8 +14,8 @@ from fractions import Fraction
 from math import comb
 from typing import Optional
 
-from ..tile import Tile, Color, TileSet, MIN_NUMBER, MAX_NUMBER
-from ..rules import RuleSet, STANDARD_RULES
+from ..tile import Tile, Color, TileSet, JOKER, MIN_NUMBER, MAX_NUMBER
+from ..rules import RuleSet, STANDARD_RULES, is_valid_meld
 
 
 # ── Pool helpers ───────────────────────────────────────────────────────────────
@@ -199,3 +199,89 @@ def tile_scarcity(
         label = "JOKER" if j else f"{c.value[0].upper()}{n}"  # type: ignore[union-attr]
         result[label] = seen_counts[key] / total
     return result
+
+
+# ── Joker-substitution-aware completion ───────────────────────────────────────
+
+def any_completion_keys(
+    partial: list[Tile],
+    rules: RuleSet = STANDARD_RULES,
+) -> set[tuple]:
+    """
+    The set of tile keys (number, color, is_joker) that, if drawn, would
+    complete `partial` into a valid meld of size `rules.min_meld_size`.
+
+    Joker-aware: if a joker drawn would complete the partial, the joker
+    key is included. If no single draw of any kind completes it, returns
+    an empty set.
+
+    Use for "what should I hope to draw?" questions. For "the specific
+    target meld I want," see tiles_needed_to_complete.
+    """
+    needed = rules.min_meld_size - len(partial)
+    if needed != 1:
+        # Multi-tile completions aren't single-draw events; return empty.
+        return set()
+
+    useful: set[tuple] = set()
+    # Try each possible natural tile + joker as the missing piece.
+    for color in Color:
+        for number in range(MIN_NUMBER, MAX_NUMBER + 1):
+            if number in rules.excluded_numbers:
+                continue
+            candidate = Tile(number=number, color=color)
+            if is_valid_meld(partial + [candidate], rules):
+                useful.add((number, color, False))
+    # Joker check
+    if is_valid_meld(partial + [JOKER], rules):
+        useful.add((None, None, True))
+    return useful
+
+
+def prob_complete_with_any_draw(
+    partial: list[Tile],
+    known_tiles: list[Tile],
+    rules: RuleSet = STANDARD_RULES,
+    full_pool: Optional[list[Tile]] = None,
+) -> Fraction:
+    """
+    P(next single draw completes `partial` into a valid meld).
+
+    This is more useful than `prob_complete_in_k_draws` for K=1 because it
+    considers ALL completions (including joker), not just a specific target.
+    """
+    useful_keys = any_completion_keys(partial, rules)
+    if not useful_keys:
+        return Fraction(0)
+    pool = unseen_pool(known_tiles, full_pool)
+    if not pool:
+        return Fraction(0)
+    matching = sum(
+        1 for t in pool if (t.number, t.color, t.is_joker) in useful_keys
+    )
+    return Fraction(matching, len(pool))
+
+
+def expected_draws_to_any_completion(
+    partial: list[Tile],
+    known_tiles: list[Tile],
+    rules: RuleSet = STANDARD_RULES,
+    full_pool: Optional[list[Tile]] = None,
+) -> float:
+    """
+    Expected number of draws until a single tile completing `partial` into a
+    valid meld is drawn. Joker-aware. Returns inf if no completion exists.
+    """
+    useful_keys = any_completion_keys(partial, rules)
+    if not useful_keys:
+        return float("inf")
+    pool = unseen_pool(known_tiles, full_pool)
+    if not pool:
+        return float("inf")
+    N = len(pool)
+    K = sum(
+        1 for t in pool if (t.number, t.color, t.is_joker) in useful_keys
+    )
+    if K == 0:
+        return float("inf")
+    return (N + 1) / (K + 1)

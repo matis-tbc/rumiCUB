@@ -130,6 +130,66 @@ def test_prob_draw_specific_respects_custom_pool():
     assert p == Fraction(0)
 
 
+# ── Joker-aware completion sets ───────────────────────────────────────────────
+
+def test_any_completion_run_two_in_a_row():
+    """[R1, R2] is completed by R3 (specific) OR a joker."""
+    from rumicub.analysis.probability import any_completion_keys
+    keys = any_completion_keys([t(1, R), t(2, R)])
+    assert (3, R, False) in keys
+    assert (None, None, True) in keys
+    # NOT B3, BK3, O3 (wrong color)
+    assert (3, Color.BLUE, False) not in keys
+
+
+def test_any_completion_run_with_gap():
+    """[R1, R3] is completed by R2 (gap) OR joker — R4 would not help."""
+    from rumicub.analysis.probability import any_completion_keys
+    keys = any_completion_keys([t(1, R), t(3, R)])
+    assert (2, R, False) in keys
+    assert (None, None, True) in keys
+    assert (4, R, False) not in keys
+
+
+def test_any_completion_group_two_distinct_colors():
+    """[R7, B7] is completed by any of BK7, O7, or joker."""
+    from rumicub.analysis.probability import any_completion_keys
+    keys = any_completion_keys([t(7, R), t(7, B)])
+    assert (7, Color.BLACK, False) in keys
+    assert (7, Color.ORANGE, False) in keys
+    assert (None, None, True) in keys
+    # R7 already there — drawing another R7 doesn't form a group
+    assert (7, Color.RED, False) not in keys
+
+
+def test_any_completion_single_tile_partial_is_empty():
+    """A 1-tile partial needs 2 more draws — out of single-draw scope."""
+    from rumicub.analysis.probability import any_completion_keys
+    keys = any_completion_keys([t(1, R)])
+    assert keys == set()
+
+
+def test_prob_complete_with_any_draw_joker_in_pool():
+    """[R1, R2] with no relevant tiles seen — useful = 2 R3s + 2 jokers = 4/106."""
+    from rumicub.analysis.probability import prob_complete_with_any_draw
+    p = prob_complete_with_any_draw([t(1, R), t(2, R)], known_tiles=[])
+    # Pool has 2 R3 + 2 JOKER = 4 useful out of 106
+    assert p == Fraction(4, 106)
+
+
+def test_expected_draws_to_any_completion_uses_joker():
+    """The any-completion expected draws should be SHORTER than a specific
+    target's expected draws, because more tiles are useful."""
+    from rumicub.analysis.probability import (
+        expected_draws_to_any_completion,
+    )
+    partial = [t(1, R), t(2, R)]
+    e_any = expected_draws_to_any_completion(partial, known_tiles=[])
+    # specific R3: useful=2, N=106 -> 107/3 ≈ 35.67
+    # any (R3 or J): useful=4, N=106 -> 107/5 = 21.4
+    assert e_any == pytest.approx(21.4, abs=0.1)
+
+
 def test_prob_complete_in_k_already_done():
     partial = [t(1, R), t(2, R), t(3, R)]
     p = prob_complete_in_k_draws(partial, partial, [], k=1)

@@ -27,10 +27,16 @@ from ..rules import (
 # ── Enumeration ────────────────────────────────────────────────────────────────
 
 def find_all_melds(tiles: list[Tile], rules: RuleSet = STANDARD_RULES) -> list[list[Tile]]:
-    """Return every valid meld constructible from `tiles` (each tile used at most once)."""
+    """Return every valid meld constructible from `tiles` (each tile used at most once).
+
+    Caps subset-size enumeration at max_run_size: any subset larger than that
+    cannot form a valid meld, so iterating to n+1 wastes exponential time on
+    large hands (e.g., a 30-tile hand otherwise tries combinations(30, 25)).
+    """
     result: list[list[Tile]] = []
     n = len(tiles)
-    for size in range(rules.min_meld_size, n + 1):
+    max_useful = min(n, rules.max_run_size)
+    for size in range(rules.min_meld_size, max_useful + 1):
         for indices in combinations(range(n), size):
             subset = [tiles[i] for i in indices]
             if is_valid_meld(subset, rules):
@@ -163,7 +169,10 @@ def _backtrack(
             on_new_best(dict(best))
 
     n = len(remaining)
-    for size in range(rules.min_meld_size, n + 1):
+    # No valid meld is larger than max_run_size — cap to avoid useless
+    # exponential exploration of large subsets.
+    max_useful = min(n, rules.max_run_size)
+    for size in range(rules.min_meld_size, max_useful + 1):
         for combo in combinations(range(n), size):
             subset = [remaining[i] for i in combo]
             if is_valid_meld(subset, rules):
