@@ -13,6 +13,9 @@ naive solver (the ILP must be at least as good).
 from __future__ import annotations
 import pytest
 
+# Skip the entire module if PuLP isn't installed (it's an optional extra).
+pytest.importorskip("pulp", reason="install via: pip install 'rumicub[solver]'")
+
 from rumicub.tile import Tile, Color, JOKER, TileSet
 from rumicub.rules import STANDARD_RULES, is_valid_meld
 from rumicub.engine.solver import find_optimal_play

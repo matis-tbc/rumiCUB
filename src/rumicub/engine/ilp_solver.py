@@ -23,7 +23,24 @@ from collections import Counter
 from dataclasses import dataclass, field
 from typing import Optional
 
-import pulp
+try:
+    import pulp
+    _HAS_PULP = True
+except ImportError:
+    pulp = None  # type: ignore[assignment]
+    _HAS_PULP = False
+
+
+def _require_pulp() -> None:
+    if not _HAS_PULP:
+        raise ImportError(
+            "rumiCUB's ILP solver requires PuLP. Install with:\n"
+            "    pip install 'rumicub[solver]'\n"
+            "or directly:\n"
+            "    pip install pulp\n"
+            "The hand-only solver in rumicub.engine.solver works without it."
+        )
+
 
 from ..tile import Tile, JOKER
 from ..rules import RuleSet, STANDARD_RULES, meld_value_accurate, is_valid_meld
@@ -74,6 +91,7 @@ class BoardManipulator:
         hand: list[Tile],
         board: list[list[Tile]],
     ) -> BoardSolution:
+        _require_pulp()
         start = time.perf_counter()
 
         hand_tiles = list(hand)
