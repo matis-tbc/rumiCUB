@@ -201,8 +201,115 @@ def hand_flexibility(
     """
     Score 0–1: how many distinct partial melds the hand contains.
     Higher = more drawing options; lower = more locked-in.
+
+    NOTE: this is the legacy heuristic. Prefer `hand_quality_score` for an
+    EV-based assessment.
     """
     partials = rank_partial_melds(hand, known_tiles, rules, full_pool)
     full_melds = find_all_melds(hand, rules)
     raw = len(full_melds) * 3 + len(partials)
     return min(1.0, raw / 30.0)
+
+
+# ── EV-based hand quality + opening EV ────────────────────────────────────────
+
+def can_open_now(
+    hand: list[Tile],
+    rules: RuleSet = STANDARD_RULES,
+) -> tuple[bool, int]:
+    """
+    Returns (can_open, best_opening_value).
+
+    can_open: True if the best possible play from this hand alone meets the
+    opening threshold (using accurate joker valuation).
+    best_opening_value: meld_value_accurate of the best playable set.
+    """
+    optimal = find_optimal_play(hand, board=[], rules=rules)
+    if optimal["tiles_played"] == 0:
+        return False, 0
+    from ..rules import meld_value_accurate
+    opening_pts = sum(meld_value_accurate(m) for m in optimal["melds_to_place"])
+    return opening_pts >= rules.initial_meld_min_points, opening_pts
+
+
+def prob_can_open_within_k_draws(
+    hand: list[Tile],
+    known_tiles: list[Tile],
+    k: int,
+    rules: RuleSet = STANDARD_RULES,
+    full_pool: Optional[list[Tile]] = None,
+    samples: int = 200,
+) -> float:
+    """
+    Sampled probability that the player can open within `k` draws.
+
+    Uses Monte Carlo sampling rather than exact enumeration because the
+    interaction between drawn tiles and the existing hand creates a
+    combinatorially huge state space.
+    """
+    import random
+    from ..rules import meld_value_accurate
+
+    can_now, value_now = can_open_now(hand, rules)
+    if can_now:
+        return 1.0
+
+    pool = unseen_pool(known_tiles, full_pool)
+    if len(pool) < k:
+        # Not enough tiles left to draw k more
+        return 0.0
+
+    rng = random.Random(42)
+    successes = 0
+    for _ in range(samples):
+        drawn = rng.sample(pool, k)
+        new_hand = list(hand) + drawn
+        opt = find_optimal_play(new_hand, board=[], rules=rules)
+        if opt["tiles_played"] == 0:
+            continue
+        opening = sum(meld_value_accurate(m) for m in opt["melds_to_place"])
+        if opening >= rules.initial_meld_min_points:
+            successes += 1
+    return successes / samples
+
+
+def hand_quality_score(
+    hand: list[Tile],
+    known_tiles: list[Tile],
+    rules: RuleSet = STANDARD_RULES,
+    full_pool: Optional[list[Tile]] = None,
+) -> dict:
+    """
+    EV-flavoured snapshot of hand quality:
+      can_open_now      bool — can play 30+ pts immediately
+      best_play_value   accurate-value sum of the best immediate play
+      best_play_tiles   tile count of best immediate play
+      prob_open_in_3    P(can open within 3 draws)
+      penalty_if_loss   sum of hand values (joker = joker_penalty)
+                        — this is what you lose if you don't finish
+      partial_count     number of distinct 2-tile partials in hand
+    """
+    from ..rules import meld_value_accurate
+
+    can_now, value_now = can_open_now(hand, rules)
+    optimal = find_optimal_play(hand, board=[], rules=rules)
+    best_tiles = optimal["tiles_played"]
+    best_value = sum(meld_value_accurate(m) for m in optimal["melds_to_place"])
+    p_open_3 = (
+        1.0 if can_now
+        else prob_can_open_within_k_draws(hand, known_tiles, 3, rules, full_pool)
+    )
+    penalty = sum(
+        rules.joker_penalty if t.is_joker else (t.number or 0)
+        for t in hand
+    )
+    partials = rank_partial_melds(hand, known_tiles, rules, full_pool)
+
+    return {
+        "can_open_now": can_now,
+        "best_play_value": best_value,
+        "best_play_tiles": best_tiles,
+        "prob_open_in_3": p_open_3,
+        "penalty_if_loss": penalty,
+        "partial_count": len(partials),
+    }
