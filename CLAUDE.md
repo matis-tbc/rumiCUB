@@ -3,12 +3,15 @@
 A Rummikub game engine with a board-manipulation solver, strategy advisor,
 and probability analysis. Public repo: https://github.com/matis-tbc/rumiCUB
 
-## Status (as of 2026-05-25)
+## Status (as of 2026-05-26)
 
 Initial engine extracted from a prior web session. 109/109 tests pass.
 A deep review identified critical bugs and structural gaps; the engine works
 for hand-only play and basic validation but the headline "solver" claim is
-overstated and several rules are mis-modeled. See **Forward plan** below.
+overstated and several rules are mis-modeled.
+Plan reviewed via /autoplan 2026-05-26: all 5 phases approved, scope locked
+to "all three uses" (solver / playable game / AI self-play), deploy target
+locked to Vercel + Fly.io. See **Forward plan** below.
 
 ## Project layout
 
@@ -108,74 +111,166 @@ Official tournament: if you start rearranging the board and can't make it
 legal in 2 min, your changes revert AND you draw 3 penalty tiles. Not
 modeled.
 
-## Forward plan (decisions locked 2026-05-25)
+## Forward plan (decisions locked 2026-05-25, autoplan-reviewed 2026-05-26)
 
-Chosen direction: **maximum ambition** —
-- ILP-based board-manipulation solver (Phase 2 = core focus)
-- Web frontend: React + FastAPI bridge to the Python engine
-- Tournament-strict rule fidelity + keep pluggable variants
-- Repo extracted to its own public repo (DONE — you're in it)
+Chosen direction: **maximum ambition, all three use cases**
+- Solver / study tool (engine + probability + analysis)
+- Playable game (web UI, multiplayer-capable)
+- AI self-play benchmark (bot framework, simulation stats)
+- ILP-based board-manipulation solver (Phase 2 = core)
+- Web frontend: React on Vercel + FastAPI on Fly.io
+- Tournament-strict rule fidelity + pluggable variants
+- Repo: public at https://github.com/matis-tbc/rumiCUB
+
+### Architecture target (post-Phase 4)
+
+```
+src/rumicub/
+  tile.py, rules.py, game.py
+  engine/
+    hand_solver.py      ← current solver.py renamed
+    candidates.py       ← NEW Phase 2: enumerate all valid melds for an ILP run
+    ilp_solver.py       ← NEW Phase 2: BoardManipulator class
+    validator.py        ← existing
+  analysis/
+    probability.py      ← Phase 1 C5, C4 fixes; Phase 3 joker substitution
+    strategy.py         ← Phase 1 C1, M4 fixes; Phase 3 rebuild
+    monte_carlo.py      ← NEW Phase 3: opponent sim, win-prob estimation
+  bot/                  ← NEW (AI self-play benchmark)
+    random_bot.py
+    greedy_bot.py
+    solver_bot.py
+    arena.py            ← bot-vs-bot tournaments + stats
+  web/                  ← NEW Phase 4
+    api.py              ← FastAPI app
+    schemas.py          ← Pydantic models
+tests/
+  test_*.py             ← existing unit tests
+  test_solver_oracle.py ← NEW: hand-computed positions, asserts on specific melds
+  test_performance.py   ← NEW: pytest-benchmark perf assertions
+  fixtures/positions.py ← NEW: 10-20 known puzzles
+```
 
 ### Phase 1 — Fix what's broken (1–2 days)
-Goal: every claim in the README is true; no hollow recommendations.
-- [ ] C1: rewrite advisor to use `meld_value_accurate` for opening check;
-  add `points_true` field to optimal-play result
-- [ ] C3: rename `allow_board_rearrange` → `allow_board_manipulation`;
-  permit meld extension and meld merging even when the flag is off; only
-  block splits, joker-swaps, regrouping
-- [ ] C4: rewrite `expected_draws_to_complete` using negative-hypergeometric
-  for *N* successes (exact via summation)
-- [ ] C5: `unseen_pool(known, full_pool=None)` — accept injected pool,
-  Game passes its actual pool
-- [ ] M1: every turn must be a play with `tiles_played > 0` OR a draw —
-  reject no-op proposals
-- [ ] M2: declare winner by lowest hand penalty when game ends via pool
-  exhaustion + stuck players
-- [ ] M4: solver `maximize="points"` uses `meld_value_accurate`
-- [ ] Property-based tests with Hypothesis: tile conservation, validator
-  symmetry, joker substitution legality
-- [ ] Solver output tests assert the actual melds, not just counts
+Ordered by dependency. Goal: every README claim true, no hollow recs.
 
-### Phase 2 — Real solver (1 week)
-Implement Hertog & Hulshof ILP for board-manipulation optimal play.
-- Use `pulp` (free, CBC bundled) or `mip` (`python-mip`)
-- Binary vars per (tile, candidate-meld-position)
-- Constraints: every meld valid, every tile used ≤1 time, hand tiles only
-  flow into the board (not reverse, unless rearrangement allowed)
-- Objective: maximize tiles placed (configurable)
-- Keep current `find_all_melds` etc. as `find_simple_melds` for tutorials
-- New `BoardManipulator.solve(hand, board, rules) → new_board`
-- Pipe solver output through existing validator to catch model bugs
-- Benchmark: 14-hand + 30-board mid-game in <500 ms
+1. **C5** — `unseen_pool(known, full_pool=None)` accepts injected pool;
+   `Game` passes its actual pool. Touches every probability function.
+2. **C4** — `expected_draws_to_complete` uses negative-hypergeometric for
+   *N* successes (exact summation). Depends on C5.
+3. **C1** — strategy advisor uses `meld_value_accurate` for opening check;
+   add `points_true` field to `find_optimal_play` result. Depends on C4
+   ordering of probability fixes.
+4. **C3** — rename `allow_board_rearrange` → `allow_board_manipulation`;
+   permit meld extension (add-tile-to-meld) and meld merging even when
+   flag is off; only block splits, joker-swaps, full re-grouping.
+5. **M4** — solver `maximize="points"` uses `meld_value_accurate`.
+6. **M1** — every turn must be `tiles_played > 0` OR `draw()`; reject
+   no-op proposals.
+7. **M2** — declare winner by lowest hand penalty when pool exhausts +
+   no player can play (stuck state).
+8. **Solver oracle tests** — `tests/fixtures/positions.py` with 10-20
+   hand-computed puzzles; assertions on specific melds.
+9. **Property-based tests** — Hypothesis: tile conservation, validator
+   symmetry, joker substitution legality.
+10. **Benchmark suite** — `tests/test_performance.py` with
+    pytest-benchmark; baseline numbers for solver, validator, probability.
 
-References to consult before coding:
-- Hertog & Hulshof 2006, "Solving Rummikub Problems by Integer Linear
-  Programming"
-- D. Eppstein 2017 notes on Rummikub complexity (NP-hard for general
-  optimal play; tractable in practice with ILP for realistic sizes)
+### Phase 2 — Board-manipulation ILP solver (1 week)
+
+The CLAUDE.md previously cited a specific paper title that the original
+session may have hallucinated. **Build from first principles instead.**
+The technique below is standard 0-1 ILP for tile-placement problems;
+implementations and writeups exist in the open-source Rummikub community
+(verify any specific paper before citing).
+
+**Approach (pre-enumeration + exact MIP):**
+1. **Enumerate candidate melds** — generate every valid run + group that
+   can be formed from `hand + board_tiles` (with joker substitution).
+   Practical size: a 14-hand + 30-board game produces ~5k-20k candidates.
+   Module: `engine/candidates.py`.
+2. **Decision variables** — binary `x_m` per candidate meld m (1 if used).
+3. **Constraints:**
+   - Tile conservation: for each tile t, `sum(x_m for m containing t) ≤ count(t in pool)`
+   - Joker conservation: same but for jokers (≤2 typically)
+   - Board legality: every board tile from `board_before` must appear in
+     exactly one selected meld (unless rearrangement is disabled — then
+     existing meld signatures must be preserved)
+4. **Objective:**
+   - Primary: `max sum(tiles_from_hand_used * x_m)`
+   - Tie-break: `max sum(meld_value_accurate * x_m)`
+5. **Library:** `pulp` (free, CBC solver bundled, simple API). Re-evaluate
+   `python-mip` if performance becomes an issue.
+6. **Validation oracle:** every solver output piped through the existing
+   `validate_turn()` to catch model bugs.
+
+**Public API:**
+```python
+from rumicub.engine.ilp_solver import BoardManipulator
+result = BoardManipulator(rules).solve(hand, board)
+# returns: {board_after, tiles_played, points_true, melds_changed, solve_time_ms}
+```
+
+**Performance budget:** 14-hand + 30-board mid-game in <500 ms (CBC, no
+warm start). Document fallback to hand-only solver if budget blown.
+
+**Keep:** current `hand_solver.find_all_melds` / `find_all_complete_solutions`
+for tutorials and small-position exploration. They're the "naive" reference
+implementation that the ILP must match on hand-only positions.
 
 ### Phase 3 — Strategy + probability rebuild (3–4 days)
 - Joker-substitution-aware completion sets: `any_completion(partial)`
-  returns sets of accepted draws (joker OR specific naturals)
-- Negative-hypergeometric for multi-tile completion (depends on Phase 1 C4)
-- Monte Carlo opponent sim (1000 games against random/simple-bot baselines)
-  to give honest win-probability estimates
-- Opening EV: P(can open within K draws) given current pool
-- Replace `hand_flexibility` with EV(hand) under optimal play
+  returns sets of accepted draws (joker OR specific naturals).
+- Multi-tile negative-hypergeometric (depends on Phase 1 C4 done).
+- `analysis/monte_carlo.py`: opponent sim (1000+ games against random
+  and greedy baselines) for honest win-probability estimates.
+- Opening EV: P(can open within K draws) given current pool.
+- Replace `hand_flexibility` with EV(hand) under optimal play.
+
+### Phase 3.5 — Bot framework (2-3 days, can interleave with Phase 3)
+- `bot/random_bot.py` — plays first valid meld or draws.
+- `bot/greedy_bot.py` — plays the result of `find_optimal_play`.
+- `bot/solver_bot.py` — plays the result of `BoardManipulator.solve` if
+  available, else greedy.
+- `bot/arena.py` — runs N games between any pair of bots, returns
+  win-rate stats with confidence intervals. CLI: `python -m rumicub.bot.arena
+  --p1 greedy --p2 solver --games 1000`.
 
 ### Phase 4 — Frontend (1–2 weeks)
-React + FastAPI:
-- FastAPI exposes the Python engine over HTTP (one module: `web/api.py`)
-- React app: drag-and-drop tile rack, board view with meld grouping,
-  "Suggest play" button calling the solver, "Show all completions"
-  highlight, probability sidebar (tile scarcity heatmap, P(draw useful))
-- Game replay mode for studying past games
-- Style: leverage portfolio's tactical/industrial design system as a
-  starting point (concrete neutrals, restrained color semantics)
 
-### Phase 5 — Polish + 1.0 (half day)
-- LICENSE (MIT), CHANGELOG, GitHub Actions for pytest on push
-- Tag v0.1.0 after Phase 1 lands; v0.2.0 after Phase 2; v1.0 after Phase 4
+**Stack:** React + Vite + TypeScript on Vercel; FastAPI on Fly.io.
+**Style:** leverage the portfolio's tactical/industrial design system as
+starting point (concrete neutrals, restrained color semantics, 2-4px radii).
+
+**REST API shape (lock now, freezes Phase 2 contract):**
+```
+POST   /games                      → {id, rules}    create game
+GET    /games/{id}                 → full game state
+POST   /games/{id}/play            → propose + commit a play
+POST   /games/{id}/draw            → draw a tile
+GET    /games/{id}/suggest         → solver: optimal play
+GET    /games/{id}/all-plays       → solver: every valid play (capped at N)
+GET    /games/{id}/probabilities   → distribution analysis
+GET    /games/{id}/history         → turn-by-turn replay
+```
+
+**Multiplayer:** WebSocket at `/games/{id}/ws` for live updates between
+players. Auth: session token in cookie, no accounts for v1 (anonymous
+play, game-ID-as-shareable-URL).
+
+**UI surface:**
+- Tile rack with drag-and-drop
+- Board view with meld grouping
+- "Suggest play" → animate solver's proposed melds
+- "Show all completions" highlight
+- Probability sidebar (tile scarcity heatmap, P(draw useful))
+- Game replay mode
+
+### Phase 5 — Polish + 1.0 (1 day)
+- LICENSE (MIT), CHANGELOG.md, GitHub Actions running pytest on push
+- Tag v0.1.0 after Phase 1; v0.2.0 after Phase 2; v0.3.0 after Phase 3+3.5;
+  v1.0 after Phase 4 deployed.
+- README rewrite reflecting full feature surface.
 
 ## Style + workflow conventions
 
