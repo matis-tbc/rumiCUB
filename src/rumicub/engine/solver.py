@@ -1,11 +1,10 @@
 """
 Core solver: enumerate all valid melds and find the optimal play for a turn.
 
-find_optimal_play() operates on hand tiles only.  Board rearrangement (the hard
-NP-complete case) is validated by the validator but is not solved automatically
-here — when allow_board_rearrange=True the player proposes the full board state
-and the validator checks its legality.  The solver finds the best play assuming
-the existing board melds remain untouched.
+find_optimal_play() operates on hand tiles only.  Board manipulation (the hard
+NP-hard case) is NOT solved here — the proper ILP-based BoardManipulator lives
+in engine/ilp_solver.py (Phase 2). This module is the simple meld enumerator
+used by the strategy advisor and as the oracle for the ILP solver's tests.
 
 Optimisation goal (maximize parameter):
   "tiles_played" – place the most tiles from hand (default, classic strategy)
@@ -16,7 +15,13 @@ from itertools import combinations
 from typing import Callable
 
 from ..tile import Tile
-from ..rules import RuleSet, STANDARD_RULES, is_valid_meld, meld_value
+from ..rules import (
+    RuleSet,
+    STANDARD_RULES,
+    is_valid_meld,
+    meld_value,
+    meld_value_accurate,
+)
 
 
 # ── Enumeration ────────────────────────────────────────────────────────────────
@@ -88,7 +93,11 @@ def find_optimal_play(
         board_after     – full board state after the play (existing + new melds)
         hand_after      – tiles remaining in hand
         tiles_played    – number of hand tiles placed
-        points          – sum of the placed hand tiles' accurate face values
+        points          – sum of meld_value (joker = 30, end-game-penalty scale).
+                          Kept for backward compatibility.
+        points_true     – sum of meld_value_accurate (joker = represented value).
+                          Use this for opening-threshold checks and any honest
+                          scoring display.
     """
     best: dict = {
         "melds_to_place": [],
@@ -96,6 +105,7 @@ def find_optimal_play(
         "hand_after": hand[:],
         "tiles_played": 0,
         "points": 0,
+        "points_true": 0,
     }
 
     if not hand:
@@ -113,11 +123,12 @@ def find_optimal_play(
     return best
 
 
-def _score(melds: list[list[Tile]]) -> tuple[int, int]:
-    """Return (tiles_played, points) for a set of melds."""
+def _score(melds: list[list[Tile]]) -> tuple[int, int, int]:
+    """Return (tiles_played, points_penalty, points_true) for a set of melds."""
     tp = sum(len(m) for m in melds)
-    pts = sum(meld_value(m) for m in melds)
-    return tp, pts
+    pts_penalty = sum(meld_value(m) for m in melds)
+    pts_true = sum(meld_value_accurate(m) for m in melds)
+    return tp, pts_penalty, pts_true
 
 
 def _backtrack(
@@ -129,12 +140,16 @@ def _backtrack(
     maximize: str,
     on_new_best: Callable[[dict], None] | None,
 ):
-    tp, pts = _score(current_melds)
-    best_tp, best_pts = best["tiles_played"], best["points"]
+    tp, pts_penalty, pts_true = _score(current_melds)
+    best_tp = best["tiles_played"]
+    best_pts_true = best["points_true"]
 
+    # "points" mode optimises true (accurate) value — joker counted as the tile
+    # it represents, not 30. The penalty-scale points field is still populated
+    # for backward compatibility but is NOT the comparison key.
     is_better = (
         tp > best_tp if maximize == "tiles_played"
-        else (pts > best_pts or (pts == best_pts and tp > best_tp))
+        else (pts_true > best_pts_true or (pts_true == best_pts_true and tp > best_tp))
     )
 
     if is_better:
@@ -142,7 +157,8 @@ def _backtrack(
         best["board_after"] = list(board) + [m[:] for m in current_melds]
         best["hand_after"] = remaining[:]
         best["tiles_played"] = tp
-        best["points"] = pts
+        best["points"] = pts_penalty
+        best["points_true"] = pts_true
         if on_new_best:
             on_new_best(dict(best))
 

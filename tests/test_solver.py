@@ -117,3 +117,40 @@ def test_optimal_play_callback_fires():
     find_optimal_play(hand, board=[], on_new_best=lambda b: calls.append(dict(b)))
     assert len(calls) >= 1
     assert calls[-1]["tiles_played"] == 3
+
+
+# ── points_true field: honest joker valuation ─────────────────────────────────
+
+def test_points_true_joker_not_inflated():
+    # [J, R2, R3] — joker fills as 1 (extends low) or 4 (extends high).
+    # meld_value_accurate returns the maximising assignment (extends high to 4),
+    # so accurate = 2 + 3 + 4 = 9, NOT 30 + 2 + 3 = 35.
+    hand = [JOKER, t(2, R), t(3, R)]
+    result = find_optimal_play(hand, board=[])
+    assert result["tiles_played"] == 3
+    assert result["points"] == 35       # penalty-scale (joker=30) — backward compat
+    assert result["points_true"] == 9   # true value (joker=represented)
+
+
+def test_points_true_no_joker_matches_points():
+    hand = [t(10, R), t(11, R), t(12, R)]
+    result = find_optimal_play(hand, board=[])
+    assert result["points"] == result["points_true"] == 33
+
+
+def test_maximize_points_uses_true_value():
+    # With maximize="points", solver picks the highest TRUE-value combination,
+    # even if it means leaving tiles on the rack.
+    # Two competing approaches for hand [J, R2, R3, B11, B12, B13]:
+    #   A: [J, R2, R3] + [B11, B12, B13]  → 6 tiles, true=9+36=45
+    #   B: [J, B11, B12, B13]             → 4 tiles, true=10+11+12+13=46 (J as 10)
+    # B wins on true points (46 > 45) even though A plays more tiles.
+    hand = [JOKER, t(2, R), t(3, R), t(11, B), t(12, B), t(13, B)]
+    result_pts = find_optimal_play(hand, board=[], maximize="points")
+    assert result_pts["points_true"] == 46
+    assert result_pts["tiles_played"] == 4
+
+    # maximize="tiles_played" should prefer playing all 6 tiles instead.
+    result_tiles = find_optimal_play(hand, board=[], maximize="tiles_played")
+    assert result_tiles["tiles_played"] == 6
+    assert result_tiles["points_true"] == 45

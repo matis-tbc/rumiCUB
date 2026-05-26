@@ -195,3 +195,105 @@ def test_propose_play_invalid_and_abandon():
     proposal.abandon()
     assert game.board == []  # unchanged
     assert not player.has_opened
+
+
+# ── full_pool snapshot ─────────────────────────────────────────────────────────
+
+def test_game_snapshots_full_pool():
+    # The Game must remember the universe of tiles, not just the draw pile,
+    # so probability functions can reason about the correct space.
+    game = Game(["A", "B"], seed=0)
+    assert len(game.full_pool) == 106
+    # After dealing, full_pool stays at 106 while pool drops by 28 (2 * 14).
+    assert len(game.pool) == 106 - 28
+
+
+def test_game_full_pool_respects_custom():
+    from rumicub.tile import TileSet
+    restricted = TileSet.restricted(excluded_numbers={13})
+    universe_size = len(restricted)   # snapshot before Game pops tiles for deal
+    game = Game(["A", "B"], seed=0, custom_pool=restricted)
+    assert len(game.full_pool) == universe_size
+    assert all(t.number != 13 for t in game.full_pool if not t.is_joker)
+
+
+# ── C1: advisor uses true joker value for opening check ───────────────────────
+
+def test_advisor_does_not_recommend_invalid_opening_with_joker():
+    """Previously: advise() inflated joker=30 and recommended invalid openings.
+    Now: opening check uses meld_value_accurate (joker = represented value)."""
+    from rumicub.analysis.strategy import advise
+    # Hand: [J, R2, R3] -- joker fills as 4 (extends high). Accurate value=9.
+    # Validator rejects opening below 30; advisor must agree.
+    hand = [JOKER, t(2, R), t(3, R)]
+    advice = advise(hand, board=[], has_opened=False)
+    assert advice.action == "draw"
+    assert "true value" in advice.reasoning.lower() or "9" in advice.reasoning
+
+
+def test_advisor_recommends_legitimate_opening():
+    from rumicub.analysis.strategy import advise
+    hand = [t(10, R), t(11, R), t(12, R)] + [t(1, B)] * 11
+    advice = advise(hand, board=[], has_opened=False)
+    assert advice.action == "play"
+    assert advice.points == 33   # true value, no joker
+
+
+# ── M1: no-op turn ban ────────────────────────────────────────────────────────
+
+def test_noop_play_is_rejected():
+    """M1: cannot 'pass' by proposing the current board unchanged."""
+    game = Game(["A", "B"], seed=0)
+    player = game.current_player
+    player.hand = [t(1, B)] * 14  # no valid plays from this hand
+    result = game.play_melds([])
+    assert not result.ok
+    assert "not allowed" in result.reason.lower() or "no tiles played" in result.reason.lower()
+    # State unchanged
+    assert game.turn == 0
+    assert game.board == []
+    assert len(player.hand) == 14
+
+
+def test_noop_propose_marks_invalid():
+    game = Game(["A", "B"], seed=0)
+    player = game.current_player
+    player.hand = [t(1, B)] * 14
+    proposal = game.propose_play([])
+    assert not proposal.valid
+
+
+# ── M2: stuck-state winner determination ──────────────────────────────────────
+
+def test_stuck_state_winner_is_lowest_penalty():
+    """When pool empties and game ends, the player with the lowest hand
+    penalty wins, not None."""
+    game = Game(["A", "B"], seed=0)
+    a, b = game.players
+    # Drain pool to empty
+    game.pool = []
+    a.hand = [t(13, R), t(13, B)]   # 26 penalty
+    b.hand = [t(1, R), t(2, R)]      # 3 penalty
+    # A tries to draw, hits empty pool → game over
+    result = game.draw()
+    assert not result.ok
+    assert game.is_over
+    winner = game.winner()
+    assert winner is not None
+    assert winner.name == b.name   # lower penalty
+
+
+def test_stuck_state_tie_breaks_by_seat_order():
+    game = Game(["A", "B"], seed=0)
+    a, b = game.players
+    game.pool = []
+    a.hand = [t(5, R)]
+    b.hand = [t(5, B)]
+    game.draw()  # triggers game over
+    winner = game.winner()
+    assert winner.name == a.name  # tied, A is first in seat order
+
+
+def test_winner_still_none_mid_game():
+    game = Game(["A", "B"], seed=0)
+    assert game.winner() is None

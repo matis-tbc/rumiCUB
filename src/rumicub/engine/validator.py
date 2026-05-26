@@ -57,16 +57,22 @@ def validate_turn(
         invalid = [m for m in board_after if not is_valid_meld(m, rules)]
         return False, f"Invalid melds on board after turn: {invalid}"
 
-    # ── 3. Board-rearrange restriction ────────────────────────────────────
-    if not rules.allow_board_rearrange:
-        before_sigs = Counter(_meld_sig(m) for m in board_before)
-        after_sigs = Counter(_meld_sig(m) for m in board_after)
-        for sig, count in before_sigs.items():
-            if after_sigs[sig] < count:
-                return False, (
-                    "Board rearrangement is disabled — an existing meld was "
-                    "broken or modified."
-                )
+    # ── 3. Board-manipulation restriction ─────────────────────────────────
+    # When manipulation is disabled, players may still:
+    #   * leave existing melds untouched
+    #   * extend an existing meld with hand tiles (e.g. [R1,R2,R3] → [R1,R2,R3,R4])
+    # They may NOT:
+    #   * split a meld (e.g. [R1,R2,R3,R4] → [R1,R2,R3] + [R4,B4,BK4])
+    #   * merge two melds into one
+    #   * retrieve a joker out of an existing meld
+    #   * rearrange tiles across multiple existing melds
+    if not rules.allow_board_manipulation:
+        if not _every_old_meld_extends_to_a_new_meld(board_before, board_after):
+            return False, (
+                "Board manipulation is disabled — an existing meld was broken, "
+                "merged, or rearranged. Extending an existing meld with hand "
+                "tiles is allowed; splits and re-groupings are not."
+            )
 
     # ── 4. Joker-in-hand prohibition ──────────────────────────────────────
     # Jokers that were NOT in hand_before may not appear in hand_after
@@ -192,3 +198,34 @@ def _meld_sig(meld: list[Tile]) -> tuple:
         c = tile.color.value if tile.color is not None else ""
         return (n, c, tile.is_joker)
     return tuple(sorted(_sortable(t) for t in meld))
+
+
+def _every_old_meld_extends_to_a_new_meld(
+    board_before: list[list[Tile]],
+    board_after: list[list[Tile]],
+) -> bool:
+    """
+    Check that every meld in board_before survives in board_after, possibly
+    extended with additional tiles. No old meld may be split, merged with
+    another, or have any of its tiles redistributed across multiple new melds.
+
+    The matching is one-to-one: each old meld must map to exactly one new
+    meld that is a superset of it (by multiset of tile keys).
+    """
+    new_melds_keys = [Counter(_key(t) for t in m) for m in board_after]
+    used = [False] * len(new_melds_keys)
+
+    for old_meld in board_before:
+        old_keys = Counter(_key(t) for t in old_meld)
+        matched = False
+        for i, new_keys in enumerate(new_melds_keys):
+            if used[i]:
+                continue
+            # Subset check: every old tile appears at least as often in this new meld.
+            if all(new_keys.get(k, 0) >= v for k, v in old_keys.items()):
+                used[i] = True
+                matched = True
+                break
+        if not matched:
+            return False
+    return True
