@@ -137,10 +137,21 @@ class Game:
         return self._over
 
     def winner(self) -> Player | None:
+        """
+        Return the winning player.
+          * If any player has an empty hand -> that player wins (classic).
+          * Else if the game is over (pool exhausted) -> lowest hand-penalty wins.
+          * Else (game still in progress) -> None.
+        Ties: returns the first tied player in seat order.
+        """
         for p in self.players:
             if not p.hand:
                 return p
-        return None
+        if not self._over:
+            return None
+        # Stuck-state end: lowest hand-penalty wins.
+        penalty_per_player = self.scores()
+        return min(self.players, key=lambda p: penalty_per_player[p.name])
 
     # ── Actions ────────────────────────────────────────────────────────────
 
@@ -164,6 +175,10 @@ class Game:
                         reason="must_play_if_possible: a valid play exists — drawing is not allowed.",
                     )
 
+        # M2: stuck-state end. If pool is empty AND no player can place any
+        # tile this turn (we don't know about other players' hands precisely,
+        # but if every player's hand has no valid play AND we have no draw to
+        # take, the game ends with lowest-hand-penalty wins).
         if not self.pool:
             self._over = True
             return TurnResult(ok=False, reason="Pool is empty — game over.")
@@ -204,6 +219,16 @@ class Game:
 
         tiles_placed = len(player.hand) - len(hand_after)
         pts = sum(t.value() for t in player.hand) - sum(t.value() for t in hand_after)
+
+        # M1: no-op plays are not legal turns. A turn must place at least one
+        # tile from hand to the board OR be a draw. Validator passed (because
+        # conservation trivially holds for no-op), so we layer this on top.
+        if ok and tiles_placed == 0:
+            ok = False
+            reason = (
+                "No tiles played. A turn must either place at least one tile "
+                "from your hand OR be a draw — passing is not allowed."
+            )
 
         return ProposedPlay(
             _game=self,

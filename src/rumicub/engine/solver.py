@@ -1,11 +1,10 @@
 """
 Core solver: enumerate all valid melds and find the optimal play for a turn.
 
-find_optimal_play() operates on hand tiles only.  Board rearrangement (the hard
-NP-complete case) is validated by the validator but is not solved automatically
-here — when allow_board_rearrange=True the player proposes the full board state
-and the validator checks its legality.  The solver finds the best play assuming
-the existing board melds remain untouched.
+find_optimal_play() operates on hand tiles only.  Board manipulation (the hard
+NP-hard case) is NOT solved here — the proper ILP-based BoardManipulator lives
+in engine/ilp_solver.py (Phase 2). This module is the simple meld enumerator
+used by the strategy advisor and as the oracle for the ILP solver's tests.
 
 Optimisation goal (maximize parameter):
   "tiles_played" – place the most tiles from hand (default, classic strategy)

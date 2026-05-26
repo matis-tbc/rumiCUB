@@ -237,3 +237,63 @@ def test_advisor_recommends_legitimate_opening():
     advice = advise(hand, board=[], has_opened=False)
     assert advice.action == "play"
     assert advice.points == 33   # true value, no joker
+
+
+# ── M1: no-op turn ban ────────────────────────────────────────────────────────
+
+def test_noop_play_is_rejected():
+    """M1: cannot 'pass' by proposing the current board unchanged."""
+    game = Game(["A", "B"], seed=0)
+    player = game.current_player
+    player.hand = [t(1, B)] * 14  # no valid plays from this hand
+    result = game.play_melds([])
+    assert not result.ok
+    assert "not allowed" in result.reason.lower() or "no tiles played" in result.reason.lower()
+    # State unchanged
+    assert game.turn == 0
+    assert game.board == []
+    assert len(player.hand) == 14
+
+
+def test_noop_propose_marks_invalid():
+    game = Game(["A", "B"], seed=0)
+    player = game.current_player
+    player.hand = [t(1, B)] * 14
+    proposal = game.propose_play([])
+    assert not proposal.valid
+
+
+# ── M2: stuck-state winner determination ──────────────────────────────────────
+
+def test_stuck_state_winner_is_lowest_penalty():
+    """When pool empties and game ends, the player with the lowest hand
+    penalty wins, not None."""
+    game = Game(["A", "B"], seed=0)
+    a, b = game.players
+    # Drain pool to empty
+    game.pool = []
+    a.hand = [t(13, R), t(13, B)]   # 26 penalty
+    b.hand = [t(1, R), t(2, R)]      # 3 penalty
+    # A tries to draw, hits empty pool → game over
+    result = game.draw()
+    assert not result.ok
+    assert game.is_over
+    winner = game.winner()
+    assert winner is not None
+    assert winner.name == b.name   # lower penalty
+
+
+def test_stuck_state_tie_breaks_by_seat_order():
+    game = Game(["A", "B"], seed=0)
+    a, b = game.players
+    game.pool = []
+    a.hand = [t(5, R)]
+    b.hand = [t(5, B)]
+    game.draw()  # triggers game over
+    winner = game.winner()
+    assert winner.name == a.name  # tied, A is first in seat order
+
+
+def test_winner_still_none_mid_game():
+    game = Game(["A", "B"], seed=0)
+    assert game.winner() is None

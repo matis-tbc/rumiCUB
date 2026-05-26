@@ -30,7 +30,11 @@ class RuleSet:
     joker_replacement_allowed: bool = True
 
     # ── Board manipulation ────────────────────────────────────────────────
-    allow_board_rearrange: bool = True
+    # Allows splitting existing melds, merging two melds into one, joker-swap
+    # retrieval, and full regrouping. Extending an existing meld with a
+    # hand tile is ALWAYS legal regardless of this flag — that's not
+    # manipulation, it's placing a tile onto an existing meld.
+    allow_board_manipulation: bool = True
 
     # ── Color/number restrictions ─────────────────────────────────────────
     allowed_color_combos: Optional[FrozenSet[FrozenSet[Color]]] = None

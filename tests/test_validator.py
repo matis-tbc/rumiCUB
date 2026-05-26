@@ -53,7 +53,7 @@ def test_invalid_meld_on_board():
 # ── Board rearrange restriction ────────────────────────────────────────────────
 
 def test_no_rearrange_allows_adding_new_meld():
-    rules = RuleSet(allow_board_rearrange=False)
+    rules = RuleSet(allow_board_manipulation=False)
     existing = [[t(1, R), t(2, R), t(3, R)]]
     hand = [t(7, B), t(7, BK), t(7, O)]
     new_board = existing + [[t(7, B), t(7, BK), t(7, O)]]
@@ -61,14 +61,56 @@ def test_no_rearrange_allows_adding_new_meld():
 
 
 def test_no_rearrange_blocks_breaking_existing_meld():
-    rules = RuleSet(allow_board_rearrange=False)
+    rules = RuleSet(allow_board_manipulation=False)
     existing = [[t(1, R), t(2, R), t(3, R), t(4, R)]]  # 4-tile run
     hand = []
     # Player tries to split it into two separate melds
     new_board = [[t(1, R), t(2, R), t(3, R)], [t(4, R), t(4, B), t(4, BK)]]
     # R4 only exists in hand (none here), so conservation fails first — but let's test the rearrange check too
     hand2 = [t(4, B), t(4, BK)]
-    fail(validate_turn(hand2, existing, [], new_board, has_opened=True, rules=rules), "rearrangement")
+    fail(validate_turn(hand2, existing, [], new_board, has_opened=True, rules=rules), "manipulation")
+
+
+def test_no_manipulation_allows_extending_existing_meld():
+    """C3 fix: extending a meld with hand tiles is NOT manipulation."""
+    rules = RuleSet(allow_board_manipulation=False)
+    existing = [[t(1, R), t(2, R), t(3, R)]]
+    hand = [t(4, R)]
+    # Add R4 to the existing run -> [R1,R2,R3,R4]
+    new_board = [[t(1, R), t(2, R), t(3, R), t(4, R)]]
+    ok(validate_turn(hand, existing, [], new_board, has_opened=True, rules=rules))
+
+
+def test_no_manipulation_allows_extending_group():
+    rules = RuleSet(allow_board_manipulation=False)
+    existing = [[t(7, R), t(7, B), t(7, BK)]]
+    hand = [t(7, O)]
+    # Add O7 to existing group -> [R7,B7,BK7,O7]
+    new_board = [[t(7, R), t(7, B), t(7, BK), t(7, O)]]
+    ok(validate_turn(hand, existing, [], new_board, has_opened=True, rules=rules))
+
+
+def test_no_manipulation_blocks_merging_two_melds():
+    rules = RuleSet(allow_board_manipulation=False)
+    # Two separate runs:
+    existing = [[t(1, R), t(2, R), t(3, R)], [t(4, R), t(5, R), t(6, R)]]
+    hand = []
+    # Player tries to merge into one [R1-R6]
+    new_board = [[t(1, R), t(2, R), t(3, R), t(4, R), t(5, R), t(6, R)]]
+    fail(
+        validate_turn(hand, existing, [], new_board, has_opened=True, rules=rules),
+        "manipulation",
+    )
+
+
+def test_manipulation_allowed_by_default():
+    """allow_board_manipulation=True (default) permits splits."""
+    rules = RuleSet()  # default flag is True
+    existing = [[t(1, R), t(2, R), t(3, R), t(4, R)]]
+    hand = [t(4, B), t(4, BK)]
+    # Split [R1-R4] into [R1,R2,R3] and form new group [R4,B4,BK4]
+    new_board = [[t(1, R), t(2, R), t(3, R)], [t(4, R), t(4, B), t(4, BK)]]
+    ok(validate_turn(hand, existing, [], new_board, has_opened=True, rules=rules))
 
 
 # ── Joker in hand prohibition ─────────────────────────────────────────────────
@@ -171,7 +213,7 @@ def test_opening_joker_high_value_meets_threshold():
 
 
 def test_opening_hand_only_blocks_board_tiles():
-    rules = RuleSet(opening_hand_only=True, allow_board_rearrange=True)
+    rules = RuleSet(opening_hand_only=True, allow_board_manipulation=True)
     board = [[t(10, R), t(11, R), t(12, R)]]   # 33 pts already on board
     hand = [t(9, R), t(1, B), t(2, B)]
     # Player extends existing run with R9 and tries to claim it as their opening.
