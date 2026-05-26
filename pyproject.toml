@@ -7,7 +7,9 @@ name = "rumicub"
 version = "0.1.0"
 description = "Rummikub game engine with solver, strategy advisor, and probability analysis"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = [
+    "pulp>=3.0",
+]
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0", "pytest-cov", "hypothesis>=6.0", "pytest-benchmark>=4.0"]
