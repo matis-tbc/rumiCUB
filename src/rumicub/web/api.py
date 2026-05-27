@@ -15,11 +15,13 @@ from typing import Optional
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
+from collections import defaultdict
+
+from ..tile import Color
 from ..game import Game
 from ..rules import STANDARD_RULES, meld_value_accurate
 from ..engine.solver import find_optimal_play
 from ..analysis.strategy import hand_quality_score
-from ..analysis.probability import tile_scarcity
 
 from .schemas import (
     CreateGameRequest,
@@ -234,9 +236,6 @@ def probabilities(game_id: str) -> ProbabilitiesResponse:
       - scarcity: per-tile-type "how many copies have been seen" (used for
         a heatmap in the UI)
     """
-    from collections import defaultdict
-    from ..tile import Color
-
     game = _get_game(game_id)
     player = game.current_player
     known = list(player.hand) + [t for m in game.board for t in m]

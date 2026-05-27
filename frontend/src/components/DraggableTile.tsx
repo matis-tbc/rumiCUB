@@ -3,10 +3,13 @@
  *
  * The drag id encodes WHERE the tile is being dragged FROM, so the drag-end
  * handler can move it correctly:
- *   "hand-<index>"            tile from the hand
- *   "pending-<meldIdx>-<idx>" tile from a pending meld on the board
+ *   "hand-<index>"             tile from the hand rack
+ *   "board-<meldIdx>-<tileIdx>" tile from any meld on the board
  *
- * v1 only enables hand→board drags. Pending-meld tiles are not draggable yet.
+ * Both source kinds are interchangeable with any drop target (hand, an
+ * existing meld, or the "new-meld" zone). The Game's validator catches
+ * illegal proposed boards on submit; the client does not enforce
+ * intermediate validity.
  */
 import { Tile } from "./Tile";
 import { type TileDTO } from "../lib/api";

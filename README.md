@@ -70,7 +70,7 @@ pip install -e '.[solver]'
 # Dev install (tests, benchmarks, hypothesis):
 pip install -e '.[dev]'
 
-pytest tests/                  # 191 tests
+pytest tests/                  # 202 tests
 python examples/solver_demo.py
 python -m rumicub.bot.arena --p1 solver --p2 greedy --games 10
 ```
@@ -173,5 +173,7 @@ print(stats.win_counts, stats.win_rate_ci("solver"))
 | 2 | ILP board-manipulation solver | done (v0.2.0) |
 | 3 | Joker-aware probability + EV-based hand quality | done (v0.3.0) |
 | 3.5 | Bot framework + Monte Carlo + arena CLI | done (v0.3.0) |
-| 4 | React + FastAPI web frontend with cube theme | in progress |
-| 5 | LICENSE, CHANGELOG, CI, v1.0 release | upcoming |
+| 4 | Rebrand to rumiCUBE + FastAPI backend + Vite/React cube-themed UI | done (v0.4.0) |
+| 4.4 | Drag-and-drop (hand→board) + probability sidebar | done (v0.5.0) |
+| 4.5 | DnD v2 — every board tile draggable, full rearrangement | done (v0.6.0) |
+| 5 | LICENSE, CHANGELOG, CI, single-player vs bot, deploy, v1.0 release | upcoming |
