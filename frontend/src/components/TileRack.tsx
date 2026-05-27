@@ -20,7 +20,7 @@ export function TileRack({ tiles, label, draggable = true }: TileRackProps) {
     <div className="flex flex-col gap-2">
       {label && (
         <div
-          className="text-xs uppercase tracking-widest"
+          className="text-[10px] uppercase tracking-[0.18em]"
           style={{
             color: "var(--color-text-mute)",
             fontFamily: "var(--font-mono)",
@@ -34,13 +34,13 @@ export function TileRack({ tiles, label, draggable = true }: TileRackProps) {
       )}
       <div
         ref={setNodeRef}
-        className="cube-stage flex flex-wrap gap-2 p-4 rounded-sm transition-colors"
+        className="cube-stage flex flex-wrap gap-2 p-4 rounded-md transition-colors"
         style={{
           background: isOver
-            ? "rgba(30, 136, 229, 0.12)"
-            : "var(--color-bg-card)",
+            ? "rgba(199, 242, 61, 0.12)"
+            : "var(--color-surface)",
           border: isOver
-            ? "1px solid var(--color-tile-blue)"
+            ? "1px solid var(--color-accent)"
             : "1px solid var(--color-border)",
           minHeight: 80,
         }}

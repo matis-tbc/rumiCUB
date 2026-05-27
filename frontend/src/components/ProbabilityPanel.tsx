@@ -52,7 +52,7 @@ export function ProbabilityPanel({ gameId, refreshKey }: ProbabilityPanelProps) 
       <div
         className="rounded-sm p-4 text-xs"
         style={{
-          background: "var(--color-bg-card)",
+          background: "var(--color-surface)",
           border: "1px solid var(--color-tile-red)",
           color: "var(--color-tile-red)",
           fontFamily: "var(--font-mono)",
@@ -68,7 +68,7 @@ export function ProbabilityPanel({ gameId, refreshKey }: ProbabilityPanelProps) 
       <div
         className="rounded-sm p-4 text-xs"
         style={{
-          background: "var(--color-bg-card)",
+          background: "var(--color-surface)",
           border: "1px solid var(--color-border)",
           color: "var(--color-text-mute)",
           fontFamily: "var(--font-mono)",
@@ -98,7 +98,7 @@ export function ProbabilityPanel({ gameId, refreshKey }: ProbabilityPanelProps) 
       <div
         className="rounded-sm p-4"
         style={{
-          background: "var(--color-bg-card)",
+          background: "var(--color-surface)",
           border: "1px solid var(--color-border)",
         }}
       >
@@ -115,7 +115,7 @@ export function ProbabilityPanel({ gameId, refreshKey }: ProbabilityPanelProps) 
           <KV
             k="can open"
             v={q.can_open_now ? "yes" : "no"}
-            color={q.can_open_now ? "var(--color-tile-blue)" : "var(--color-text-dim)"}
+            color={q.can_open_now ? "var(--color-accent)" : "var(--color-text-dim)"}
           />
           <KV k="best play" v={`${q.best_play_tiles} tiles · ${q.best_play_value} pts`} />
           <KV k="p(open in 3)" v={`${Math.round(q.prob_open_in_3 * 100)}%`} />
@@ -129,7 +129,7 @@ export function ProbabilityPanel({ gameId, refreshKey }: ProbabilityPanelProps) 
       <div
         className="rounded-sm p-4"
         style={{
-          background: "var(--color-bg-card)",
+          background: "var(--color-surface)",
           border: "1px solid var(--color-border)",
         }}
       >
