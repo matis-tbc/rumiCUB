@@ -1,25 +1,30 @@
 /**
  * Board — the shared playing area showing all melds laid down.
  *
- * Each meld is a droppable zone (so the player can drop a tile from their
- * hand onto it to extend the meld). A trailing "new meld" zone lets the
- * player start a fresh meld.
+ * DnD v2: every tile on the board is draggable (dragId "board-{meldIdx}-{tileIdx}"),
+ * not just hand-sourced ones. Players can move tiles between melds, split melds,
+ * pull tiles back to the hand. The server validates the final proposed board on
+ * submit; the client does not try to enforce intermediate legality.
  *
- * Tiles already on existing melds are NOT draggable from the board yet —
- * v1 keeps interactions hand→board only. v2 will allow board→board moves
- * and joker retrieval via DnD.
+ * Drop targets:
+ *   - Each meld (id "meld-N") — appends the dragged tile to that meld
+ *   - "new-meld" — starts a fresh meld with the dragged tile
+ *   - "hand" (via TileRack) — returns the dragged tile to the rack
+ *
+ * Visual cue: a meld whose tile set differs from the committed board version
+ * gets an orange outline so the player can see what changes are pending.
  */
-import { Tile } from "./Tile";
-import { type MeldDTO, type TileDTO } from "../lib/api";
+import { DraggableTile } from "./DraggableTile";
+import { type MeldDTO } from "../lib/api";
 import { useDroppable } from "@dnd-kit/core";
 
 interface BoardProps {
   melds: MeldDTO[];
-  pendingTileIds?: Set<string>;   // tile UIDs that are pending (not yet committed)
-  highlightIndices?: Set<number>;
+  pendingMeldIndices?: Set<number>;
+  pendingChangeCount?: number;
 }
 
-export function Board({ melds, pendingTileIds, highlightIndices }: BoardProps) {
+export function Board({ melds, pendingMeldIndices, pendingChangeCount }: BoardProps) {
   return (
     <div
       className="cube-stage relative rounded-sm p-6 min-h-[260px]"
@@ -38,11 +43,14 @@ export function Board({ melds, pendingTileIds, highlightIndices }: BoardProps) {
         }}
       >
         <span>
-          board <span style={{ color: "var(--color-text-dim)" }}>· {melds.length} meld{melds.length === 1 ? "" : "s"}</span>
+          board{" "}
+          <span style={{ color: "var(--color-text-dim)" }}>
+            · {melds.length} meld{melds.length === 1 ? "" : "s"}
+          </span>
         </span>
-        {pendingTileIds && pendingTileIds.size > 0 && (
+        {pendingChangeCount !== undefined && pendingChangeCount > 0 && (
           <span style={{ color: "var(--color-tile-orange)" }}>
-            {pendingTileIds.size} pending
+            {pendingChangeCount} change{pendingChangeCount === 1 ? "" : "s"} pending
           </span>
         )}
       </div>
@@ -53,8 +61,7 @@ export function Board({ melds, pendingTileIds, highlightIndices }: BoardProps) {
             key={`meld-${i}`}
             meldIndex={i}
             meld={meld}
-            highlighted={highlightIndices?.has(i)}
-            pendingTileIds={pendingTileIds}
+            highlighted={pendingMeldIndices?.has(i)}
           />
         ))}
         <NewMeldDropZone />
@@ -77,12 +84,10 @@ function MeldDropZone({
   meldIndex,
   meld,
   highlighted,
-  pendingTileIds,
 }: {
   meldIndex: number;
   meld: MeldDTO;
   highlighted?: boolean;
-  pendingTileIds?: Set<string>;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: `meld-${meldIndex}` });
 
@@ -102,25 +107,18 @@ function MeldDropZone({
           ? "1px solid var(--color-tile-orange)"
           : "1px dashed rgba(255,255,255,0.06)",
         outlineOffset: 2,
+        minWidth: 60,
+        minHeight: 60,
       }}
     >
-      {meld.tiles.map((tile, j) => {
-        const tileUid = `meld-${meldIndex}-${j}`;
-        const isPending = pendingTileIds?.has(tileUid);
-        return (
-          <div
-            key={j}
-            style={{
-              opacity: isPending ? 1 : 1,
-              filter: isPending
-                ? "drop-shadow(0 0 6px var(--color-tile-orange))"
-                : undefined,
-            }}
-          >
-            <Tile tile={tile} size={48} />
-          </div>
-        );
-      })}
+      {meld.tiles.map((tile, j) => (
+        <DraggableTile
+          key={`board-${meldIndex}-${j}`}
+          dragId={`board-${meldIndex}-${j}`}
+          tile={tile}
+          size={48}
+        />
+      ))}
     </div>
   );
 }
