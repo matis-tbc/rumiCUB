@@ -1,18 +1,21 @@
 /**
- * TileRack — a horizontal strip of tiles representing a player's hand.
- * Uses the isometric Tile component; gives the rack a wooden-trim look.
+ * TileRack — horizontal strip of the player's hand tiles.
+ * Each tile is draggable; the rack itself is a drop zone so tiles dragged
+ * out of the board can be returned to the hand (revert behavior).
  */
-import { Tile } from "./Tile";
+import { DraggableTile } from "./DraggableTile";
 import { type TileDTO } from "../lib/api";
+import { useDroppable } from "@dnd-kit/core";
 
 interface TileRackProps {
   tiles: TileDTO[];
-  selectedIndices?: Set<number>;
-  onTileClick?: (index: number) => void;
   label?: string;
+  draggable?: boolean;
 }
 
-export function TileRack({ tiles, selectedIndices, onTileClick, label }: TileRackProps) {
+export function TileRack({ tiles, label, draggable = true }: TileRackProps) {
+  const { setNodeRef, isOver } = useDroppable({ id: "hand" });
+
   return (
     <div className="flex flex-col gap-2">
       {label && (
@@ -23,14 +26,22 @@ export function TileRack({ tiles, selectedIndices, onTileClick, label }: TileRac
             fontFamily: "var(--font-mono)",
           }}
         >
-          {label} <span style={{ color: "var(--color-text-dim)" }}>· {tiles.length} tile{tiles.length === 1 ? "" : "s"}</span>
+          {label}{" "}
+          <span style={{ color: "var(--color-text-dim)" }}>
+            · {tiles.length} tile{tiles.length === 1 ? "" : "s"}
+          </span>
         </div>
       )}
       <div
-        className="cube-stage flex flex-wrap gap-2 p-4 rounded-sm"
+        ref={setNodeRef}
+        className="cube-stage flex flex-wrap gap-2 p-4 rounded-sm transition-colors"
         style={{
-          background: "var(--color-bg-card)",
-          border: "1px solid var(--color-border)",
+          background: isOver
+            ? "rgba(30, 136, 229, 0.12)"
+            : "var(--color-bg-card)",
+          border: isOver
+            ? "1px solid var(--color-tile-blue)"
+            : "1px solid var(--color-border)",
           minHeight: 80,
         }}
       >
@@ -43,11 +54,11 @@ export function TileRack({ tiles, selectedIndices, onTileClick, label }: TileRac
           </div>
         ) : (
           tiles.map((tile, i) => (
-            <Tile
-              key={i}
+            <DraggableTile
+              key={`hand-${i}`}
+              dragId={`hand-${i}`}
               tile={tile}
-              selected={selectedIndices?.has(i)}
-              onClick={onTileClick ? () => onTileClick(i) : undefined}
+              disabled={!draggable}
             />
           ))
         )}

@@ -18,14 +18,19 @@ from fastapi.middleware.cors import CORSMiddleware
 from ..game import Game
 from ..rules import STANDARD_RULES, meld_value_accurate
 from ..engine.solver import find_optimal_play
+from ..analysis.strategy import hand_quality_score
+from ..analysis.probability import tile_scarcity
 
 from .schemas import (
     CreateGameRequest,
     GameStateDTO,
+    HandQualityDTO,
     MeldDTO,
     PlayRequest,
     PlayResponse,
     PlayerDTO,
+    ProbabilitiesResponse,
+    ScarcityEntry,
     SuggestResponse,
     TileDTO,
 )
@@ -217,3 +222,66 @@ def _meld_sig(meld: list) -> tuple:
          t.is_joker) for t in meld
     )
     return tuple(items)
+
+
+# ── Probability snapshot ─────────────────────────────────────────────────────
+
+@app.get("/games/{game_id}/probabilities", response_model=ProbabilitiesResponse)
+def probabilities(game_id: str) -> ProbabilitiesResponse:
+    """
+    Analytical snapshot for the CURRENT player:
+      - hand_quality: can_open_now, best_play, prob_open_in_3, penalty
+      - scarcity: per-tile-type "how many copies have been seen" (used for
+        a heatmap in the UI)
+    """
+    from collections import defaultdict
+    from ..tile import Color
+
+    game = _get_game(game_id)
+    player = game.current_player
+    known = list(player.hand) + [t for m in game.board for t in m]
+
+    quality = hand_quality_score(
+        hand=player.hand,
+        known_tiles=known,
+        rules=game.rules,
+        full_pool=game.full_pool,
+    )
+
+    # Compute scarcity from raw counts so Blue / Black don't collide on label
+    # (the labels in analysis.probability.tile_scarcity collapse on first
+    # letter — fine for printing, ambiguous for a UI grid).
+    total_counts: dict[tuple, int] = defaultdict(int)
+    for t in game.full_pool:
+        total_counts[(t.number, t.color, t.is_joker)] += 1
+    seen_counts: dict[tuple, int] = defaultdict(int)
+    for t in known:
+        seen_counts[(t.number, t.color, t.is_joker)] += 1
+
+    # Unique 2-letter prefix per color (BLue and BLack would otherwise both
+    # render as "BL" if we used `c.value[:2].upper()`).
+    COLOR_PREFIX = {
+        Color.RED: "R",
+        Color.BLUE: "BL",
+        Color.BLACK: "BK",
+        Color.ORANGE: "O",
+    }
+    scarcity: list[ScarcityEntry] = []
+    for key, total in total_counts.items():
+        n, c, j = key
+        frac = seen_counts[key] / total if total > 0 else 0.0
+        if j:
+            scarcity.append(ScarcityEntry(
+                label="JOKER", n=None, c=None, j=True, seen_fraction=frac,
+            ))
+        else:
+            scarcity.append(ScarcityEntry(
+                label=f"{COLOR_PREFIX[c]}{n}",
+                n=n, c=c.value, j=False, seen_fraction=frac,
+            ))
+
+    return ProbabilitiesResponse(
+        hand_quality=HandQualityDTO(**quality),
+        scarcity=scarcity,
+        pool_remaining=len(game.pool),
+    )

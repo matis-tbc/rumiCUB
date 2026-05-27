@@ -87,3 +87,28 @@ class SuggestResponse(BaseModel):
     solver_used: Literal["hand_only", "ilp"] = "hand_only"
     solve_time_ms: float = 0.0
     status: str = "Optimal"
+
+
+class ScarcityEntry(BaseModel):
+    """One tile type and the fraction of its copies that have been seen."""
+    label: str       # e.g. "R7", "JOKER"
+    n: Optional[int]
+    c: Optional[str]
+    j: bool
+    seen_fraction: float = Field(..., ge=0.0, le=1.0)
+
+
+class HandQualityDTO(BaseModel):
+    can_open_now: bool
+    best_play_value: int
+    best_play_tiles: int
+    prob_open_in_3: float
+    penalty_if_loss: int
+    partial_count: int
+
+
+class ProbabilitiesResponse(BaseModel):
+    """Analytical snapshot for the current player."""
+    hand_quality: HandQualityDTO
+    scarcity: list[ScarcityEntry]
+    pool_remaining: int

@@ -61,6 +61,29 @@ export interface HealthResponse {
   ilp_available: boolean;
 }
 
+export interface HandQualityDTO {
+  can_open_now: boolean;
+  best_play_value: number;
+  best_play_tiles: number;
+  prob_open_in_3: number;
+  penalty_if_loss: number;
+  partial_count: number;
+}
+
+export interface ScarcityEntry {
+  label: string;
+  n: number | null;
+  c: string | null;
+  j: boolean;
+  seen_fraction: number;
+}
+
+export interface ProbabilitiesResponse {
+  hand_quality: HandQualityDTO;
+  scarcity: ScarcityEntry[];
+  pool_remaining: number;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     ...init,
@@ -103,4 +126,7 @@ export const api = {
     request<SuggestResponse>(
       `/games/${id}/suggest${use_ilp ? "?use_ilp=true" : ""}`,
     ),
+
+  probabilities: (id: string) =>
+    request<ProbabilitiesResponse>(`/games/${id}/probabilities`),
 };

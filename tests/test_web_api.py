@@ -96,6 +96,39 @@ def test_suggest_ilp_when_available(client):
     assert r.json()["solver_used"] == "ilp"
 
 
+def test_probabilities_endpoint(client):
+    r = client.post("/games", json={"player_names": ["A", "B"], "seed": 7})
+    gid = r.json()["id"]
+    r = client.get(f"/games/{gid}/probabilities")
+    assert r.status_code == 200
+    body = r.json()
+    assert "hand_quality" in body
+    assert "scarcity" in body
+    assert "pool_remaining" in body
+    # 4 colors × 13 numbers + 1 joker entry = 53 distinct tile types
+    assert len(body["scarcity"]) == 53
+    # hand_quality must have the expected keys
+    hq = body["hand_quality"]
+    for key in [
+        "can_open_now", "best_play_value", "best_play_tiles",
+        "prob_open_in_3", "penalty_if_loss", "partial_count",
+    ]:
+        assert key in hq
+
+
+def test_probabilities_scarcity_no_blue_black_collision(client):
+    """Regression: tile_scarcity() collapses Blue/Black to 'B'; our API
+    computes per-key and uses 'BL'/'BK' prefixes to disambiguate."""
+    r = client.post("/games", json={"player_names": ["A", "B"], "seed": 8})
+    gid = r.json()["id"]
+    r = client.get(f"/games/{gid}/probabilities")
+    labels = {e["label"] for e in r.json()["scarcity"] if not e["j"]}
+    blue_labels = {l for l in labels if l.startswith("BL")}
+    black_labels = {l for l in labels if l.startswith("BK")}
+    assert len(blue_labels) == 13
+    assert len(black_labels) == 13
+
+
 def test_play_invalid_rejected(client):
     r = client.post("/games", json={"player_names": ["A", "B"], "seed": 5})
     gid = r.json()["id"]
