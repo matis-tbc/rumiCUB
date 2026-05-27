@@ -1,17 +1,28 @@
-# rumiCUB
+# rumiCUBE
 
-A Rummikub game engine with a board-manipulation solver, strategy advisor,
-and probability analysis. Public repo: https://github.com/matis-tbc/rumiCUB
+A Rummikub engine + ILP solver + bot framework + cube-themed web UI.
+Public repo: https://github.com/matis-tbc/rumiCUBE
+
+**Naming convention**: brand is `rumiCUBE` (cube-themed). The internal
+Python package is still imported as `from rumicub import ...` (kept short
+to avoid a 24-file rename; same pattern as `torch` for PyTorch).
 
 ## Status (as of 2026-05-26)
 
-Initial engine extracted from a prior web session. 109/109 tests pass.
-A deep review identified critical bugs and structural gaps; the engine works
-for hand-only play and basic validation but the headline "solver" claim is
-overstated and several rules are mis-modeled.
-Plan reviewed via /autoplan 2026-05-26: all 5 phases approved, scope locked
-to "all three uses" (solver / playable game / AI self-play), deploy target
-locked to Vercel + Fly.io. See **Forward plan** below.
+Phases 1, 2, 3, 3.5 all merged and tagged.
+
+| Phase | What | Tag |
+|---|---|---|
+| 1 | Fix 10 known engine bugs + property/oracle/benchmark tests (155 tests) | v0.1.0 |
+| 2 | ILP board-manipulation solver (BoardManipulator + candidates) | v0.2.0 |
+| 3 | Joker-aware probability + EV-based hand quality | v0.3.0 |
+| 3.5 | Bot framework + Monte Carlo + arena CLI | v0.3.0 |
+| 4 | Frontend rename to rumiCUBE + React+FastAPI cube UI | **in progress** |
+| 5 | LICENSE, CHANGELOG, CI, v1.0 | upcoming |
+
+**Headline result**: `python -m rumicub.bot.arena --p1 solver --p2 greedy --games 10`
+returns 10/10 for the solver — board manipulation translates directly into
+strategic dominance.
 
 ## Project layout
 

@@ -1,0 +1,56 @@
+@import "tailwindcss";
+
+@theme {
+  /* rumiCUBE palette — concrete neutrals + saturated tile colors */
+  --color-bg: #0e0e0e;
+  --color-bg-elev: #181818;
+  --color-bg-card: #1f1f1f;
+  --color-border: #2a2a2a;
+  --color-text: #f0f0f0;
+  --color-text-dim: #888888;
+  --color-text-mute: #555555;
+
+  /* Tile colors — punchy, distinct from each other */
+  --color-tile-red: #e53935;
+  --color-tile-blue: #1e88e5;
+  --color-tile-black: #1a1a1a;
+  --color-tile-orange: #fb8c00;
+  --color-tile-joker: #b8a06b;
+
+  --color-tile-red-edge: #8e1715;
+  --color-tile-blue-edge: #0d4e8c;
+  --color-tile-black-edge: #050505;
+  --color-tile-orange-edge: #a45800;
+  --color-tile-joker-edge: #6e5d3a;
+
+  --color-tile-face: #f5f1e8;
+
+  /* Typography */
+  --font-mono: 'JetBrains Mono', 'IBM Plex Mono', ui-monospace, monospace;
+  --font-display: 'Space Grotesk', system-ui, sans-serif;
+  --font-body: 'Inter Tight', system-ui, sans-serif;
+}
+
+/* Web fonts */
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter+Tight:wght@400;500;600&family=JetBrains+Mono:wght@500;700&display=swap');
+
+html, body {
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-body);
+  min-height: 100vh;
+  margin: 0;
+  padding: 0;
+  -webkit-font-smoothing: antialiased;
+  font-feature-settings: "ss01";
+}
+
+#root {
+  min-height: 100vh;
+}
+
+/* Cube stage: enables 3D perspective for tile groups */
+.cube-stage {
+  perspective: 1200px;
+  perspective-origin: 50% 35%;
+}
