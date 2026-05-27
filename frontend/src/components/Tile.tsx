@@ -67,8 +67,9 @@ export function Tile({ tile, size = 56, selected, onClick }: TileProps) {
   const Tag = onClick ? "button" : "div";
   const baseClass =
     "relative inline-block cursor-pointer border-0 bg-transparent p-0 " +
-    "transition-transform duration-150 hover:translate-y-[-3px] active:translate-y-0 " +
-    (selected ? "translate-y-[-5px]" : "");
+    "transition-transform duration-180 ease-[cubic-bezier(0.2,0.9,0.2,1)] " +
+    "hover:translate-y-[-8px] hover:scale-[1.04] active:translate-y-0 active:scale-100 " +
+    (selected ? "translate-y-[-6px] scale-[1.03]" : "");
   const baseStyle: React.CSSProperties = {
     width: size + depth, // extra width to accommodate the right face's projection
     height: size + depth,
@@ -190,7 +191,7 @@ export function Tile({ tile, size = 56, selected, onClick }: TileProps) {
         />
       </div>
 
-      {/* Bottom shadow — grounded floor contact */}
+      {/* Bottom shadow: grounded floor contact */}
       <div
         aria-hidden
         className="absolute left-1/2 -translate-x-1/2 rounded-full"
@@ -202,6 +203,6 @@ export function Tile({ tile, size = 56, selected, onClick }: TileProps) {
             "radial-gradient(ellipse at center, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0) 70%)",
         }}
       />
-    </button>
+    </Tag>
   );
 }
