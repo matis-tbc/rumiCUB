@@ -217,6 +217,21 @@ work without `solver` or `web` extras.
 
 ---
 
+## Design System
+
+Always read `DESIGN.md` before making any visual or UI decision. All font
+choices, colors, spacing, aesthetic direction, and the cube grammar are
+defined there. Do not deviate without explicit user approval.
+
+When working on the frontend, treat `DESIGN.md` as canonical. If you find
+code that contradicts it (e.g. a tile color used as a button background, an
+em dash in copy, Space Grotesk as display font), flag it as a bug and fix
+it in the same change rather than working around it.
+
+The current `frontend/src/index.css` and components date from v0.6.0 and
+predate `DESIGN.md`. Phase 5 work includes a frontend pass to bring the live
+app in line with `DESIGN.md`.
+
 ## Skill routing
 
 (If gstack is available in your terminal session)
