@@ -1,11 +1,13 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   DndContext,
   PointerSensor,
+  closestCenter,
   useSensor,
   useSensors,
   type DragEndEvent,
 } from "@dnd-kit/core";
+import { arrayMove } from "@dnd-kit/sortable";
 import {
   api,
   type GameStateDTO,
@@ -13,6 +15,8 @@ import {
   type TileDTO,
 } from "./lib/api";
 import { SolverProvider, useSolver } from "./lib/SolverContext";
+import { wrapHand, unwrapHand, type HandTile } from "./lib/handTile";
+import { safeGet, safeRemove, safeSet, STORAGE_KEYS } from "./lib/safeStorage";
 import { Logo } from "./components/Logo";
 import { TileRack } from "./components/TileRack";
 import { Board } from "./components/Board";
@@ -21,8 +25,9 @@ import { Tile } from "./components/Tile";
 import { Btn, BtnArrow } from "./components/Btn";
 import { Chip } from "./components/Chip";
 import { SolverEyeToggle } from "./components/SolverEyeToggle";
-
-const STORAGE_KEY = "rumicube.game_id";
+import { HelpPanel } from "./components/HelpPanel";
+import { HelpButton } from "./components/HelpButton";
+import { Toast } from "./components/Toast";
 
 export default function App() {
   return (
@@ -38,19 +43,33 @@ function Game() {
   const [loading, setLoading] = useState(false);
   const [ilpAvailable, setIlpAvailable] = useState(false);
 
-  // Solver state lives in context so Board (ghost overlay) and the sidebar
-  // suggestion card both read from the same source.
-  const { suggestion, setSuggestion, setIlpAvailable: setCtxIlp } = useSolver();
+  // Help panel state
+  const [helpOpen, setHelpOpen] = useState(false);
+  const [firstVisit, setFirstVisit] = useState(false);
 
-  // PENDING STATE: tiles the player has dragged around but not yet
-  // submitted. pendingBoard is what the board WILL look like if they hit
-  // submit. pendingHand is what's still in their rack. committedBoard /
-  // committedHand mirror the last server-acknowledged state, used to derive
-  // pending diffs and to revert on cancel.
+  // Transient toast (auto-cancel-pending message)
+  const [toastMsg, setToastMsg] = useState<string | null>(null);
+
+  // Click-to-pick state. dragId of the currently-picked-up tile (hand-uuid
+  // or board-meldIdx-tileIdx). null = no selection.
+  const [selectedDragId, setSelectedDragId] = useState<string | null>(null);
+
+  const {
+    suggestion,
+    setSuggestion,
+    solverEyeOn,
+    exitPreview,
+    setIlpAvailable: setCtxIlp,
+    setCancelPending,
+  } = useSolver();
+
+  // Pending vs committed game state. Hand uses HandTile wrappers (stable
+  // UUIDs across renders) so @dnd-kit/sortable can track tiles through
+  // reorders without breaking animations or keyboard nav.
   const [pendingBoard, setPendingBoard] = useState<MeldDTO[]>([]);
-  const [pendingHand, setPendingHand] = useState<TileDTO[]>([]);
+  const [pendingHand, setPendingHand] = useState<HandTile[]>([]);
   const [committedBoard, setCommittedBoard] = useState<MeldDTO[]>([]);
-  const [committedHand, setCommittedHand] = useState<TileDTO[]>([]);
+  const [committedHand, setCommittedHand] = useState<HandTile[]>([]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
@@ -71,48 +90,105 @@ function Game() {
     return out;
   }, [pendingBoard, committedBoard]);
 
+  const cancelPending = useCallback(() => {
+    const count = pendingChangeCount;
+    setPendingBoard(committedBoard);
+    setPendingHand(committedHand);
+    setSelectedDragId(null);
+    return count;
+  }, [committedBoard, committedHand, pendingChangeCount]);
+
+  // Inject cancelPending into the SolverContext so Solver Eye can auto-
+  // cancel pending changes before previewing (E3 / D1).
+  useEffect(() => {
+    setCancelPending(cancelPending);
+    return () => setCancelPending(null);
+  }, [cancelPending, setCancelPending]);
+
+  // Initial load
   useEffect(() => {
     (async () => {
       try {
         const h = await api.health();
         setIlpAvailable(h.ilp_available);
         setCtxIlp(h.ilp_available);
-        const saved = localStorage.getItem(STORAGE_KEY);
+        const saved = safeGet(STORAGE_KEYS.gameId);
         if (saved) {
           try {
             const g = await api.getGame(saved);
             applyServerState(g);
-            return;
           } catch {
-            localStorage.removeItem(STORAGE_KEY);
+            safeRemove(STORAGE_KEYS.gameId);
+            const g = await api.createGame(["Player 1", "Player 2"]);
+            safeSet(STORAGE_KEYS.gameId, g.id);
+            applyServerState(g);
           }
+        } else {
+          const g = await api.createGame(["Player 1", "Player 2"]);
+          safeSet(STORAGE_KEYS.gameId, g.id);
+          applyServerState(g);
         }
-        const g = await api.createGame(["Player 1", "Player 2"]);
-        localStorage.setItem(STORAGE_KEY, g.id);
-        applyServerState(g);
       } catch (e) {
         setError(String(e));
+      }
+      // First-visit auto-open help
+      if (!safeGet(STORAGE_KEYS.seenIntro)) {
+        setFirstVisit(true);
+        setHelpOpen(true);
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Global keybindings: ? opens help, Esc deselects or exits preview
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      const isInput = target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA");
+      if (isInput) return;
+      if (e.key === "?" && !e.metaKey && !e.ctrlKey) {
+        e.preventDefault();
+        setHelpOpen(true);
+      } else if (e.key === "Escape") {
+        if (helpOpen) {
+          // handled by HelpPanel
+        } else if (selectedDragId) {
+          setSelectedDragId(null);
+        } else if (solverEyeOn) {
+          exitPreview();
+        }
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [helpOpen, selectedDragId, solverEyeOn, exitPreview]);
+
+  // Auto-exit Solver Eye when the game ends.
+  useEffect(() => {
+    if (state?.is_over && solverEyeOn) {
+      exitPreview();
+    }
+  }, [state?.is_over, solverEyeOn, exitPreview]);
+
+  const applyServerStateRef = useRef<((g: GameStateDTO) => void) | null>(null);
   function applyServerState(g: GameStateDTO) {
     setState(g);
     const current = g.players[g.current_player_index];
     setPendingBoard(g.board);
-    setPendingHand(current.hand);
+    setPendingHand(wrapHand(current.hand));
     setCommittedBoard(g.board);
-    setCommittedHand(current.hand);
-    setSuggestion(null);
+    setCommittedHand(wrapHand(current.hand));
+    setSuggestion(null); // E2: server state changed -> stale suggestion
+    setSelectedDragId(null);
   }
+  applyServerStateRef.current = applyServerState;
 
   async function newGame() {
     setError(null);
     setLoading(true);
     try {
       const g = await api.createGame(["Player 1", "Player 2"]);
-      localStorage.setItem(STORAGE_KEY, g.id);
+      safeSet(STORAGE_KEYS.gameId, g.id);
       applyServerState(g);
     } catch (e) {
       setError(String(e));
@@ -180,18 +256,37 @@ function Game() {
     }
   }
 
-  function cancelPending() {
-    setPendingBoard(committedBoard);
-    setPendingHand(committedHand);
-    setSuggestion(null);
-  }
+  // Click-to-pick: clicking a tile selects/deselects; clicking a drop zone
+  // places the selected tile. Wired here so the same move-tile machinery
+  // serves both click AND drag flows.
+  const placeSelectedTileAt = useCallback(
+    (targetId: string) => {
+      if (!selectedDragId) return;
+      moveTile(selectedDragId, targetId);
+      setSelectedDragId(null);
+      // Track usage for D2 discoverability hint suppression
+      const n = parseInt(safeGet(STORAGE_KEYS.clickSeenCount) ?? "0", 10);
+      safeSet(STORAGE_KEYS.clickSeenCount, String(n + 1));
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [selectedDragId, pendingBoard, pendingHand],
+  );
 
-  function onDragEnd(event: DragEndEvent) {
-    const { active, over } = event;
-    if (!over || !state) return;
-    const dragId = String(active.id);
-    const targetId = String(over.id);
+  // Shared tile-move pipeline: takes from a source, places at a target.
+  function moveTile(dragId: string, targetId: string) {
+    if (dragId === targetId) return;
 
+    // Hand-to-hand reorder
+    if (dragId.startsWith("hand-uuid:") && targetId.startsWith("hand-uuid:")) {
+      const fromIdx = pendingHand.findIndex((h) => h.id === dragId.slice("hand-uuid:".length));
+      const toIdx = pendingHand.findIndex((h) => h.id === targetId.slice("hand-uuid:".length));
+      if (fromIdx < 0 || toIdx < 0) return;
+      const clamped = Math.max(0, Math.min(pendingHand.length - 1, toIdx));
+      setPendingHand((prev) => arrayMove(prev, fromIdx, clamped));
+      return;
+    }
+
+    // Source: hand-uuid:<id> or board-<m>-<t>
     const source = takeTile(dragId, pendingHand, pendingBoard);
     if (!source) return;
     const { tile, handAfter, boardAfter } = source;
@@ -202,6 +297,14 @@ function Game() {
 
     setPendingHand(handFinal);
     setPendingBoard(pruneEmptyMelds(boardFinal));
+  }
+
+  function onDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (!over || !state) return;
+    const dragId = String(active.id);
+    const targetId = String(over.id);
+    moveTile(dragId, targetId);
   }
 
   if (!state) {
@@ -221,7 +324,11 @@ function Game() {
   const current = state.players[state.current_player_index];
 
   return (
-    <DndContext sensors={sensors} onDragEnd={onDragEnd}>
+    <DndContext
+      sensors={sensors}
+      collisionDetection={closestCenter}
+      onDragEnd={onDragEnd}
+    >
       <div className="min-h-screen flex flex-col">
         {/* Header */}
         <header
@@ -229,13 +336,19 @@ function Game() {
           style={{ borderBottom: "1px solid var(--color-border)" }}
         >
           <Logo size="md" />
-          <div className="flex items-center gap-5">
+          <div className="flex items-center gap-4">
             <Stat label="turn" value={String(state.turn)} />
             <Stat label="pool" value={String(state.pool_remaining)} />
             <SolverEyeToggle
               gameId={state.id}
               ilpAvailable={ilpAvailable}
+              onToggleResult={(r) => {
+                if (r.kind === "on" && r.cancelledPending) {
+                  setToastMsg("reverted pending changes");
+                }
+              }}
             />
+            <HelpButton onClick={() => { setFirstVisit(false); setHelpOpen(true); }} />
             <Btn onClick={newGame} disabled={loading} size="sm" tone="ghost">
               new game
             </Btn>
@@ -272,13 +385,24 @@ function Game() {
         {/* Main */}
         <main className="flex-1 flex flex-col xl:flex-row gap-6 p-8 max-w-[1600px] mx-auto w-full">
           <div className="flex-1 flex flex-col gap-6">
+            {toastMsg && (
+              <div className="flex justify-start">
+                <Toast message={toastMsg} onDismiss={() => setToastMsg(null)} />
+              </div>
+            )}
+
             <Board
               melds={pendingBoard}
               pendingMeldIndices={pendingMeldIndices}
               pendingChangeCount={pendingChangeCount}
+              gameId={state.id}
+              selectedDragId={selectedDragId}
+              onDropZoneClick={placeSelectedTileAt}
+              onPlayThis={playSuggested}
+              loading={loading}
             />
 
-            {hasPendingChanges && (
+            {hasPendingChanges && !solverEyeOn && (
               <div
                 className="flex items-center justify-between rounded px-4 py-3"
                 style={{
@@ -340,7 +464,21 @@ function Game() {
               </span>
             </div>
 
-            <TileRack tiles={pendingHand} label="your hand" />
+            <TileRack
+              tiles={pendingHand}
+              label="your hand"
+              draggable={!solverEyeOn}
+              selectedId={
+                selectedDragId?.startsWith("hand-uuid:")
+                  ? selectedDragId.slice("hand-uuid:".length)
+                  : null
+              }
+              onTileClick={(id) => {
+                if (solverEyeOn) return;
+                const dragId = `hand-uuid:${id}`;
+                setSelectedDragId((prev) => (prev === dragId ? null : dragId));
+              }}
+            />
           </div>
 
           <aside className="xl:w-80 flex flex-col gap-4">
@@ -363,21 +501,27 @@ function Game() {
               <div className="flex flex-col gap-2">
                 <Btn
                   onClick={draw}
-                  disabled={loading || state.is_over || hasPendingChanges}
-                  title={hasPendingChanges ? "cancel pending play first" : undefined}
+                  disabled={loading || state.is_over || hasPendingChanges || solverEyeOn}
+                  title={
+                    solverEyeOn
+                      ? "exit solver preview first"
+                      : hasPendingChanges
+                      ? "cancel pending play first"
+                      : undefined
+                  }
                 >
                   draw a tile
                 </Btn>
                 <Btn
                   onClick={() => suggest(false)}
-                  disabled={loading || state.is_over}
+                  disabled={loading || state.is_over || solverEyeOn}
                   tone="ghost"
                 >
                   suggest · hand-only
                 </Btn>
                 <Btn
                   onClick={() => suggest(true)}
-                  disabled={loading || state.is_over || !ilpAvailable}
+                  disabled={loading || state.is_over || !ilpAvailable || solverEyeOn}
                   tone="ghost"
                   title={ilpAvailable ? undefined : "ILP solver requires pulp"}
                 >
@@ -386,7 +530,7 @@ function Game() {
               </div>
             </div>
 
-            {suggestion && (
+            {suggestion && !solverEyeOn && (
               <div
                 className="rounded-md p-4"
                 style={{
@@ -516,12 +660,16 @@ function Game() {
             />
           </aside>
         </main>
+
+        <HelpPanel
+          open={helpOpen}
+          firstVisit={firstVisit}
+          onClose={() => { setHelpOpen(false); setFirstVisit(false); }}
+        />
       </div>
     </DndContext>
   );
 }
-
-// Small UI atom
 
 function Stat({ label, value }: { label: string; value: string }) {
   return (
@@ -545,17 +693,18 @@ function Stat({ label, value }: { label: string; value: string }) {
   );
 }
 
-// Pending-state helpers
+// Tile-move helpers operating on HandTile[] (hand) + MeldDTO[] (board).
 
 function takeTile(
   dragId: string,
-  hand: TileDTO[],
+  hand: HandTile[],
   board: MeldDTO[],
-): { tile: TileDTO; handAfter: TileDTO[]; boardAfter: MeldDTO[] } | null {
-  if (dragId.startsWith("hand-")) {
-    const i = parseInt(dragId.slice("hand-".length), 10);
-    if (Number.isNaN(i) || i < 0 || i >= hand.length) return null;
-    const tile = hand[i];
+): { tile: TileDTO; handAfter: HandTile[]; boardAfter: MeldDTO[] } | null {
+  if (dragId.startsWith("hand-uuid:")) {
+    const id = dragId.slice("hand-uuid:".length);
+    const i = hand.findIndex((h) => h.id === id);
+    if (i < 0) return null;
+    const tile = hand[i].tile;
     return {
       tile,
       handAfter: hand.filter((_, j) => j !== i),
@@ -582,11 +731,12 @@ function takeTile(
 function placeTile(
   tile: TileDTO,
   targetId: string,
-  hand: TileDTO[],
+  hand: HandTile[],
   board: MeldDTO[],
-): { handFinal: TileDTO[]; boardFinal: MeldDTO[] } | null {
+): { handFinal: HandTile[]; boardFinal: MeldDTO[] } | null {
   if (targetId === "hand") {
-    return { handFinal: [...hand, tile], boardFinal: board };
+    // Append the returned tile with a new UUID so sortable identity holds
+    return { handFinal: [...hand, { id: newId(), tile }], boardFinal: board };
   }
   if (targetId === "new-meld") {
     return { handFinal: hand, boardFinal: [...board, { tiles: [tile] }] };
@@ -600,6 +750,13 @@ function placeTile(
     return { handFinal: hand, boardFinal };
   }
   return null;
+}
+
+function newId(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `tile-${Math.random().toString(36).slice(2, 11)}-${Date.now()}`;
 }
 
 function pruneEmptyMelds(board: MeldDTO[]): MeldDTO[] {
@@ -631,3 +788,6 @@ function diffMeldCount(a: MeldDTO[], b: MeldDTO[]): number {
   }
   return diff;
 }
+
+// Suppress unused-import warning while iterating
+void unwrapHand;

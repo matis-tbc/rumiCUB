@@ -1,11 +1,27 @@
+/**
+ * SolverEyeToggle — header chip that flips Solver Eye on/off.
+ * Lime when on (with a soft glow). 44px min touch target.
+ * Calls toggleSolverEye on click and forwards the result so callers can
+ * show a toast when pending changes get cancelled.
+ */
 import { useSolver } from "../lib/SolverContext";
+
+type ToggleResult =
+  | { kind: "noop" }
+  | { kind: "off" }
+  | { kind: "on"; cancelledPending: boolean };
 
 interface SolverEyeToggleProps {
   gameId: string;
   ilpAvailable: boolean;
+  onToggleResult?: (r: ToggleResult) => void;
 }
 
-export function SolverEyeToggle({ gameId, ilpAvailable }: SolverEyeToggleProps) {
+export function SolverEyeToggle({
+  gameId,
+  ilpAvailable,
+  onToggleResult,
+}: SolverEyeToggleProps) {
   const { solverEyeOn, toggleSolverEye, fetching } = useSolver();
 
   const disabled = !ilpAvailable;
@@ -13,7 +29,7 @@ export function SolverEyeToggle({ gameId, ilpAvailable }: SolverEyeToggleProps) 
     ? "ILP solver requires pulp"
     : solverEyeOn
     ? "hide the solver overlay"
-    : "show the solver's proposed play overlaid on the board";
+    : "preview the solver's proposed play";
 
   const baseStyle: React.CSSProperties = solverEyeOn
     ? {
@@ -27,14 +43,25 @@ export function SolverEyeToggle({ gameId, ilpAvailable }: SolverEyeToggleProps) 
         border: "1px solid var(--color-border-hi)",
       };
 
+  async function onClick() {
+    const r = await toggleSolverEye(gameId);
+    onToggleResult?.(r);
+  }
+
   return (
     <button
       type="button"
-      onClick={() => toggleSolverEye(gameId)}
+      onClick={onClick}
       disabled={disabled}
       title={title}
-      className="inline-flex items-center gap-2 px-2.5 py-1 text-[10px] uppercase tracking-[0.16em] rounded-sm transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-      style={{ fontFamily: "var(--font-mono)", ...baseStyle }}
+      aria-label={`solver eye ${solverEyeOn ? "on" : "off"}`}
+      aria-pressed={solverEyeOn}
+      className="inline-flex items-center gap-2 px-3 py-2 text-[10px] uppercase tracking-[0.16em] rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+      style={{
+        fontFamily: "var(--font-mono)",
+        minHeight: 32,
+        ...baseStyle,
+      }}
     >
       <span
         className="inline-block"

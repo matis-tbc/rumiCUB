@@ -69,7 +69,7 @@ export function Tile({ tile, size = 56, selected, onClick }: TileProps) {
     "relative inline-block cursor-pointer border-0 bg-transparent p-0 " +
     "transition-transform duration-180 ease-[cubic-bezier(0.2,0.9,0.2,1)] " +
     "hover:translate-y-[-8px] hover:scale-[1.04] active:translate-y-0 active:scale-100 " +
-    (selected ? "translate-y-[-6px] scale-[1.03]" : "");
+    (selected ? "translate-y-[-8px] scale-[1.06]" : "");
   const baseStyle: React.CSSProperties = {
     width: size + depth, // extra width to accommodate the right face's projection
     height: size + depth,
@@ -85,13 +85,14 @@ export function Tile({ tile, size = 56, selected, onClick }: TileProps) {
       style={baseStyle}
       aria-label={isJoker ? "Joker" : `${tile.c} ${tile.n}`}
     >
-      {/* Glow ring when selected */}
+      {/* Click-to-pick selection ring: lime, distinct from hover-lift */}
       {selected && (
         <div
           aria-hidden
           className="absolute inset-0 rounded-md pointer-events-none -m-1"
           style={{
-            boxShadow: `0 0 0 2px ${fill}, 0 0 18px ${fill}80`,
+            boxShadow:
+              "0 0 0 2px var(--color-accent), 0 0 12px rgba(199, 242, 61, 0.4)",
           }}
         />
       )}
