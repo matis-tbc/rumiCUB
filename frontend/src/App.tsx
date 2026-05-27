@@ -27,19 +27,37 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [ilpAvailable, setIlpAvailable] = useState(false);
 
-  // PENDING STATE: tiles the player has dragged onto the board but not yet
+  // PENDING STATE: tiles the player has dragged around but not yet
   // submitted. `pendingBoard` is what the board WILL look like if they hit
   // submit. `pendingHand` is what's still in their rack.
+  // `committedBoard` / `committedHand` are the last server-acknowledged
+  // state — used to derive whether changes are pending and to revert on
+  // cancel.
   const [pendingBoard, setPendingBoard] = useState<MeldDTO[]>([]);
   const [pendingHand, setPendingHand] = useState<TileDTO[]>([]);
-  // Track UIDs of tiles in pendingBoard that came from hand (for highlight).
-  const [pendingTileIds, setPendingTileIds] = useState<Set<string>>(new Set());
+  const [committedBoard, setCommittedBoard] = useState<MeldDTO[]>([]);
+  const [committedHand, setCommittedHand] = useState<TileDTO[]>([]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
   );
 
-  const hasPendingChanges = pendingTileIds.size > 0;
+  // Derive pending-ness from the diff between proposed and committed.
+  const pendingChangeCount = useMemo(() => {
+    return diffMeldCount(committedBoard, pendingBoard) +
+      Math.abs(committedHand.length - pendingHand.length);
+  }, [committedBoard, pendingBoard, committedHand.length, pendingHand.length]);
+  const hasPendingChanges = pendingChangeCount > 0;
+
+  // Which meld indices in pendingBoard differ from committedBoard?
+  const pendingMeldIndices = useMemo(() => {
+    const out = new Set<number>();
+    pendingBoard.forEach((meld, i) => {
+      const committed = committedBoard[i];
+      if (!committed || !sameMeld(committed, meld)) out.add(i);
+    });
+    return out;
+  }, [pendingBoard, committedBoard]);
 
   // ── Game lifecycle ──────────────────────────────────────────────────────
 
@@ -72,7 +90,8 @@ export default function App() {
     const current = g.players[g.current_player_index];
     setPendingBoard(g.board);
     setPendingHand(current.hand);
-    setPendingTileIds(new Set());
+    setCommittedBoard(g.board);
+    setCommittedHand(current.hand);
     setSuggestion(null);
   }
 
@@ -151,11 +170,8 @@ export default function App() {
   }
 
   function cancelPending() {
-    if (!state) return;
-    const current = state.players[state.current_player_index];
-    setPendingBoard(state.board);
-    setPendingHand(current.hand);
-    setPendingTileIds(new Set());
+    setPendingBoard(committedBoard);
+    setPendingHand(committedHand);
     setSuggestion(null);
   }
 
@@ -167,40 +183,18 @@ export default function App() {
     const dragId = String(active.id);
     const targetId = String(over.id);
 
-    // Parse source
-    if (!dragId.startsWith("hand-")) return;
-    const handIndex = parseInt(dragId.slice("hand-".length), 10);
-    if (Number.isNaN(handIndex) || handIndex < 0 || handIndex >= pendingHand.length) return;
-    const tile = pendingHand[handIndex];
+    // Take the tile from its source, returning [tile, newHand, newBoard].
+    const source = takeTile(dragId, pendingHand, pendingBoard);
+    if (!source) return;
+    const { tile, handAfter, boardAfter } = source;
 
-    // Where did it go?
-    if (targetId === "hand") {
-      // dropped back into the hand: no-op (already there)
-      return;
-    }
-    if (targetId === "new-meld") {
-      // Start a new meld with this single tile.
-      const newMeldIndex = pendingBoard.length;
-      const tileUid = `meld-${newMeldIndex}-0`;
-      setPendingBoard([...pendingBoard, { tiles: [tile] }]);
-      setPendingHand(pendingHand.filter((_, i) => i !== handIndex));
-      setPendingTileIds(new Set([...pendingTileIds, tileUid]));
-      return;
-    }
-    if (targetId.startsWith("meld-")) {
-      const meldIdx = parseInt(targetId.slice("meld-".length), 10);
-      if (Number.isNaN(meldIdx) || meldIdx < 0 || meldIdx >= pendingBoard.length) return;
-      // Append the tile to that meld.
-      const newBoard = pendingBoard.map((m, i) =>
-        i === meldIdx ? { tiles: [...m.tiles, tile] } : m,
-      );
-      const appendedTileIdx = newBoard[meldIdx].tiles.length - 1;
-      const tileUid = `meld-${meldIdx}-${appendedTileIdx}`;
-      setPendingBoard(newBoard);
-      setPendingHand(pendingHand.filter((_, i) => i !== handIndex));
-      setPendingTileIds(new Set([...pendingTileIds, tileUid]));
-      return;
-    }
+    // Place it at the target.
+    const placed = placeTile(tile, targetId, handAfter, boardAfter);
+    if (!placed) return;
+    const { handFinal, boardFinal } = placed;
+
+    setPendingHand(handFinal);
+    setPendingBoard(pruneEmptyMelds(boardFinal));
   }
 
   if (!state) {
@@ -275,7 +269,11 @@ export default function App() {
         {/* Main */}
         <main className="flex-1 flex flex-col xl:flex-row gap-6 p-8 max-w-[1600px] mx-auto w-full">
           <div className="flex-1 flex flex-col gap-6">
-            <Board melds={pendingBoard} pendingTileIds={pendingTileIds} />
+            <Board
+              melds={pendingBoard}
+              pendingMeldIndices={pendingMeldIndices}
+              pendingChangeCount={pendingChangeCount}
+            />
 
             {/* Submit / cancel strip — only shown when there's pending state */}
             {hasPendingChanges && (
@@ -291,7 +289,7 @@ export default function App() {
                   className="text-sm"
                   style={{ color: "var(--color-tile-orange)" }}
                 >
-                  {pendingTileIds.size} tile{pendingTileIds.size === 1 ? "" : "s"} pending — submit to commit your play
+                  {pendingChangeCount} change{pendingChangeCount === 1 ? "" : "s"} pending — submit to commit your play
                 </span>
                 <div className="flex gap-2">
                   <Btn onClick={cancelPending} disabled={loading}>
@@ -564,6 +562,96 @@ function Btn({
     </button>
   );
 }
+
+// ── Pending-state helpers ─────────────────────────────────────────────────
+
+function takeTile(
+  dragId: string,
+  hand: TileDTO[],
+  board: MeldDTO[],
+): { tile: TileDTO; handAfter: TileDTO[]; boardAfter: MeldDTO[] } | null {
+  if (dragId.startsWith("hand-")) {
+    const i = parseInt(dragId.slice("hand-".length), 10);
+    if (Number.isNaN(i) || i < 0 || i >= hand.length) return null;
+    const tile = hand[i];
+    return {
+      tile,
+      handAfter: hand.filter((_, j) => j !== i),
+      boardAfter: board,
+    };
+  }
+  if (dragId.startsWith("board-")) {
+    const m = dragId.match(/^board-(\d+)-(\d+)$/);
+    if (!m) return null;
+    const mi = Number(m[1]);
+    const ti = Number(m[2]);
+    if (mi < 0 || mi >= board.length) return null;
+    const meld = board[mi];
+    if (ti < 0 || ti >= meld.tiles.length) return null;
+    const tile = meld.tiles[ti];
+    const boardAfter = board.map((mm, i) =>
+      i === mi ? { tiles: mm.tiles.filter((_, j) => j !== ti) } : mm,
+    );
+    return { tile, handAfter: hand, boardAfter };
+  }
+  return null;
+}
+
+function placeTile(
+  tile: TileDTO,
+  targetId: string,
+  hand: TileDTO[],
+  board: MeldDTO[],
+): { handFinal: TileDTO[]; boardFinal: MeldDTO[] } | null {
+  if (targetId === "hand") {
+    return { handFinal: [...hand, tile], boardFinal: board };
+  }
+  if (targetId === "new-meld") {
+    return { handFinal: hand, boardFinal: [...board, { tiles: [tile] }] };
+  }
+  if (targetId.startsWith("meld-")) {
+    const mi = parseInt(targetId.slice("meld-".length), 10);
+    if (Number.isNaN(mi) || mi < 0 || mi >= board.length) return null;
+    const boardFinal = board.map((mm, i) =>
+      i === mi ? { tiles: [...mm.tiles, tile] } : mm,
+    );
+    return { handFinal: hand, boardFinal };
+  }
+  return null;
+}
+
+function pruneEmptyMelds(board: MeldDTO[]): MeldDTO[] {
+  return board.filter((m) => m.tiles.length > 0);
+}
+
+function tileKey(t: TileDTO): string {
+  return `${t.n ?? "_"}|${t.c ?? "_"}|${t.j ? "J" : ""}`;
+}
+
+function meldKey(m: MeldDTO): string {
+  return m.tiles.map(tileKey).sort().join(",");
+}
+
+function sameMeld(a: MeldDTO, b: MeldDTO): boolean {
+  return meldKey(a) === meldKey(b);
+}
+
+function diffMeldCount(a: MeldDTO[], b: MeldDTO[]): number {
+  // Count melds in `b` that don't match any meld in `a` by canonical key.
+  // Plus the count of `a` melds missing from `b`.
+  const aKeys = a.map(meldKey);
+  const bKeys = b.map(meldKey);
+  const aCount = new Map<string, number>();
+  const bCount = new Map<string, number>();
+  for (const k of aKeys) aCount.set(k, (aCount.get(k) ?? 0) + 1);
+  for (const k of bKeys) bCount.set(k, (bCount.get(k) ?? 0) + 1);
+  let diff = 0;
+  for (const k of new Set([...aCount.keys(), ...bCount.keys()])) {
+    diff += Math.abs((aCount.get(k) ?? 0) - (bCount.get(k) ?? 0));
+  }
+  return diff;
+}
+
 
 function CompactTile({ tile }: { tile: TileDTO }) {
   const COLOR_FILL: Record<string, string> = {
