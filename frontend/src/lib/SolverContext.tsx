@@ -49,7 +49,9 @@ interface SolverContextValue {
 
 const SolverContext = createContext<SolverContextValue | null>(null);
 
-const FETCH_TIMEOUT_MS = 5_000;
+// Must exceed the backend's interactive CBC cap (8s in api.py) so a slow
+// but legitimate ILP solve doesn't get aborted into a spurious error.
+const FETCH_TIMEOUT_MS = 12_000;
 
 export function SolverProvider({ children }: { children: ReactNode }) {
   const [suggestion, setSuggestion] = useState<SuggestResponse | null>(null);

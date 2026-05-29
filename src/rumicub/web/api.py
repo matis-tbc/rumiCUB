@@ -187,7 +187,11 @@ def suggest(game_id: str, use_ilp: bool = False) -> SuggestResponse:
                 detail="ILP solver unavailable: pulp not installed. "
                        "Install with: pip install 'rumicub[solver]'",
             )
-        solver = BoardManipulator(game.rules)
+        # Interactive endpoint: cap CBC at 8s so a complex hand can't spin
+        # the default 30s. CBC returns its best-found incumbent at the limit,
+        # which is optimal or near-optimal for these problem sizes. The
+        # frontend AbortController waits 12s, comfortably above this cap.
+        solver = BoardManipulator(game.rules, time_limit_seconds=8.0)
         result = solver.solve(player.hand, game.board)
         # melds_to_place is the DELTA from the original board
         original_sigs = {_meld_sig(m) for m in game.board}
@@ -240,11 +244,16 @@ def probabilities(game_id: str) -> ProbabilitiesResponse:
     player = game.current_player
     known = list(player.hand) + [t for m in game.board for t in m]
 
+    # prob_open_in_3 runs a Monte Carlo of exhaustive solves (~400ms each).
+    # Cap it at 2s for this interactive endpoint so a hand that can't open
+    # yet doesn't spin the sidebar for a minute-plus. The probability is
+    # computed from whatever samples complete within budget.
     quality = hand_quality_score(
         hand=player.hand,
         known_tiles=known,
         rules=game.rules,
         full_pool=game.full_pool,
+        prob_time_budget_seconds=2.0,
     )
 
     # Compute scarcity from raw counts so Blue / Black don't collide on label
