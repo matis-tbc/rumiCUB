@@ -28,6 +28,8 @@ import { SolverEyeToggle } from "./components/SolverEyeToggle";
 import { HelpPanel } from "./components/HelpPanel";
 import { HelpButton } from "./components/HelpButton";
 import { Toast } from "./components/Toast";
+import { NewGameModal } from "./components/NewGameModal";
+import { PassScreen } from "./components/PassScreen";
 
 export default function App() {
   return (
@@ -46,6 +48,16 @@ function Game() {
   // Help panel state
   const [helpOpen, setHelpOpen] = useState(false);
   const [firstVisit, setFirstVisit] = useState(false);
+
+  // New-game setup modal
+  const [setupOpen, setSetupOpen] = useState(false);
+
+  // Pass-and-play privacy gate. Active when the turn just advanced to a
+  // new player so the device can be handed over without peeking.
+  const [passActive, setPassActive] = useState(false);
+  // Tracks the last (gameId, playerIdx) we rendered so applyServerState can
+  // tell a turn-advance apart from a fresh game / resume.
+  const lastSeenRef = useRef<{ gameId: string; playerIdx: number } | null>(null);
 
   // Transient toast (auto-cancel-pending message)
   const [toastMsg, setToastMsg] = useState<string | null>(null);
@@ -105,7 +117,8 @@ function Game() {
     return () => setCancelPending(null);
   }, [cancelPending, setCancelPending]);
 
-  // Initial load
+  // Initial load: resume a saved game if present, else open the setup modal
+  // (we no longer silently auto-create a 2-player game).
   useEffect(() => {
     (async () => {
       try {
@@ -116,17 +129,13 @@ function Game() {
         if (saved) {
           try {
             const g = await api.getGame(saved);
-            applyServerState(g);
+            applyServerState(g, { fresh: true });
           } catch {
             safeRemove(STORAGE_KEYS.gameId);
-            const g = await api.createGame(["Player 1", "Player 2"]);
-            safeSet(STORAGE_KEYS.gameId, g.id);
-            applyServerState(g);
+            setSetupOpen(true);
           }
         } else {
-          const g = await api.createGame(["Player 1", "Player 2"]);
-          safeSet(STORAGE_KEYS.gameId, g.id);
-          applyServerState(g);
+          setSetupOpen(true);
         }
       } catch (e) {
         setError(String(e));
@@ -170,8 +179,7 @@ function Game() {
     }
   }, [state?.is_over, solverEyeOn, exitPreview]);
 
-  const applyServerStateRef = useRef<((g: GameStateDTO) => void) | null>(null);
-  function applyServerState(g: GameStateDTO) {
+  function applyServerState(g: GameStateDTO, opts?: { fresh?: boolean }) {
     setState(g);
     const current = g.players[g.current_player_index];
     setPendingBoard(g.board);
@@ -180,16 +188,36 @@ function Game() {
     setCommittedHand(wrapHand(current.hand));
     setSuggestion(null); // E2: server state changed -> stale suggestion
     setSelectedDragId(null);
-  }
-  applyServerStateRef.current = applyServerState;
 
-  async function newGame() {
+    // Pass-and-play gate: trigger when the active player changed within the
+    // SAME game and the game isn't over. Fresh games / resumes don't gate.
+    const prev = lastSeenRef.current;
+    const turnAdvanced =
+      !opts?.fresh &&
+      prev !== null &&
+      prev.gameId === g.id &&
+      prev.playerIdx !== g.current_player_index &&
+      !g.is_over &&
+      g.players.length > 1;
+    if (turnAdvanced) {
+      setPassActive(true);
+    }
+    lastSeenRef.current = { gameId: g.id, playerIdx: g.current_player_index };
+  }
+
+  function newGame() {
+    setSetupOpen(true);
+  }
+
+  async function startGameWithNames(names: string[]) {
     setError(null);
     setLoading(true);
+    setSetupOpen(false);
     try {
-      const g = await api.createGame(["Player 1", "Player 2"]);
+      const g = await api.createGame(names);
       safeSet(STORAGE_KEYS.gameId, g.id);
-      applyServerState(g);
+      lastSeenRef.current = null; // reset so the first deal doesn't gate
+      applyServerState(g, { fresh: true });
     } catch (e) {
       setError(String(e));
     } finally {
@@ -315,8 +343,16 @@ function Game() {
             {error}
           </div>
         ) : (
-          <div style={{ color: "var(--color-text-dim)" }}>loading…</div>
+          <div style={{ color: "var(--color-text-dim)" }}>
+            {setupOpen ? "" : "loading…"}
+          </div>
         )}
+        <NewGameModal
+          open={setupOpen}
+          dismissable={false}
+          onStart={startGameWithNames}
+          onClose={() => setSetupOpen(false)}
+        />
       </div>
     );
   }
@@ -665,6 +701,19 @@ function Game() {
           open={helpOpen}
           firstVisit={firstVisit}
           onClose={() => { setHelpOpen(false); setFirstVisit(false); }}
+        />
+
+        <NewGameModal
+          open={setupOpen}
+          dismissable={true}
+          onStart={startGameWithNames}
+          onClose={() => setSetupOpen(false)}
+        />
+
+        <PassScreen
+          open={passActive}
+          playerName={current.name}
+          onReveal={() => setPassActive(false)}
         />
       </div>
     </DndContext>
