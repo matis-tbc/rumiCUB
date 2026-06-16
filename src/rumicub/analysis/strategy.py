@@ -238,6 +238,7 @@ def prob_can_open_within_k_draws(
     rules: RuleSet = STANDARD_RULES,
     full_pool: Optional[list[Tile]] = None,
     samples: int = 200,
+    time_budget_seconds: Optional[float] = None,
 ) -> float:
     """
     Sampled probability that the player can open within `k` draws.
@@ -245,8 +246,16 @@ def prob_can_open_within_k_draws(
     Uses Monte Carlo sampling rather than exact enumeration because the
     interaction between drawn tiles and the existing hand creates a
     combinatorially huge state space.
+
+    Each sample runs an exhaustive `find_optimal_play` (~400ms on a 17-tile
+    hand), so 200 samples can take well over a minute. For interactive
+    callers pass `time_budget_seconds`: sampling stops once the budget is
+    exceeded and the probability is computed from however many samples
+    completed (minimum 1). `None` keeps the exact full-sample behavior for
+    tests / batch analysis.
     """
     import random
+    import time
 
     can_now, value_now = can_open_now(hand, rules)
     if can_now:
@@ -259,16 +268,23 @@ def prob_can_open_within_k_draws(
 
     rng = random.Random(42)
     successes = 0
+    completed = 0
+    start = time.monotonic()
     for _ in range(samples):
         drawn = rng.sample(pool, k)
         new_hand = list(hand) + drawn
         opt = find_optimal_play(new_hand, board=[], rules=rules)
-        if opt["tiles_played"] == 0:
-            continue
-        opening = sum(meld_value_accurate(m) for m in opt["melds_to_place"])
-        if opening >= rules.initial_meld_min_points:
-            successes += 1
-    return successes / samples
+        completed += 1
+        if opt["tiles_played"] > 0:
+            opening = sum(meld_value_accurate(m) for m in opt["melds_to_place"])
+            if opening >= rules.initial_meld_min_points:
+                successes += 1
+        if (
+            time_budget_seconds is not None
+            and time.monotonic() - start >= time_budget_seconds
+        ):
+            break
+    return successes / completed if completed else 0.0
 
 
 def hand_quality_score(
@@ -276,6 +292,7 @@ def hand_quality_score(
     known_tiles: list[Tile],
     rules: RuleSet = STANDARD_RULES,
     full_pool: Optional[list[Tile]] = None,
+    prob_time_budget_seconds: Optional[float] = None,
 ) -> dict:
     """
     EV-flavoured snapshot of hand quality:
@@ -286,6 +303,10 @@ def hand_quality_score(
       penalty_if_loss   sum of hand values (joker = joker_penalty)
                         — this is what you lose if you don't finish
       partial_count     number of distinct 2-tile partials in hand
+
+    `prob_time_budget_seconds` caps the Monte Carlo prob_open_in_3
+    computation for interactive callers (the web endpoint). None runs the
+    full 200-sample estimate.
     """
 
     can_now, value_now = can_open_now(hand, rules)
@@ -294,7 +315,10 @@ def hand_quality_score(
     best_value = sum(meld_value_accurate(m) for m in optimal["melds_to_place"])
     p_open_3 = (
         1.0 if can_now
-        else prob_can_open_within_k_draws(hand, known_tiles, 3, rules, full_pool)
+        else prob_can_open_within_k_draws(
+            hand, known_tiles, 3, rules, full_pool,
+            time_budget_seconds=prob_time_budget_seconds,
+        )
     )
     penalty = sum(
         rules.joker_penalty if t.is_joker else (t.number or 0)

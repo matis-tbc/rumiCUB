@@ -1,0 +1,11 @@
+Cabinet Grotesk
+Designed by Indian Type Foundry
+
+Licensed via Fontshare (https://www.fontshare.com/fonts/cabinet-grotesk)
+Free for personal and commercial use under the Fontshare License.
+
+Self-hosted in this repository under the terms of the Fontshare License.
+See https://www.fontshare.com/licenses for the full license text.
+
+This bundle includes only the Extrabold (800) weight, used as the display
+typeface for rumiCUBE per DESIGN.md.

@@ -61,29 +61,38 @@ export function Tile({ tile, size = 56, selected, onClick }: TileProps) {
   const rotX = -22; // tilt back to expose top
   const rotY = 18;  // tilt right to expose left/right face
 
+  // Render as a button only if onClick is provided. Otherwise a div, so
+  // wrapping Tile in DraggableTile doesn't create a nested-button situation
+  // and tab-focus only lands on actually-interactive tiles.
+  const Tag = onClick ? "button" : "div";
+  const baseClass =
+    "relative inline-block cursor-pointer border-0 bg-transparent p-0 " +
+    "transition-transform duration-180 ease-[cubic-bezier(0.2,0.9,0.2,1)] " +
+    "hover:translate-y-[-8px] hover:scale-[1.04] active:translate-y-0 active:scale-100 " +
+    (selected ? "translate-y-[-8px] scale-[1.06]" : "");
+  const baseStyle: React.CSSProperties = {
+    width: size + depth, // extra width to accommodate the right face's projection
+    height: size + depth,
+  };
+  const buttonProps = onClick
+    ? { type: "button" as const, onClick }
+    : { role: "presentation" };
+
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={
-        "relative inline-block cursor-pointer border-0 bg-transparent p-0 " +
-        "transition-transform duration-150 hover:translate-y-[-3px] active:translate-y-0 " +
-        (selected ? "translate-y-[-5px]" : "")
-      }
-      style={{
-        width: size + depth, // extra width to accommodate the right face's projection
-        height: size + depth,
-        // Outer container is the stage; nothing visual lives here directly.
-      }}
+    <Tag
+      {...buttonProps}
+      className={baseClass}
+      style={baseStyle}
       aria-label={isJoker ? "Joker" : `${tile.c} ${tile.n}`}
     >
-      {/* Glow ring when selected */}
+      {/* Click-to-pick selection ring: lime, distinct from hover-lift */}
       {selected && (
         <div
           aria-hidden
           className="absolute inset-0 rounded-md pointer-events-none -m-1"
           style={{
-            boxShadow: `0 0 0 2px ${fill}, 0 0 18px ${fill}80`,
+            boxShadow:
+              "0 0 0 2px var(--color-accent), 0 0 12px rgba(199, 242, 61, 0.4)",
           }}
         />
       )}
@@ -183,7 +192,7 @@ export function Tile({ tile, size = 56, selected, onClick }: TileProps) {
         />
       </div>
 
-      {/* Bottom shadow — grounded floor contact */}
+      {/* Bottom shadow: grounded floor contact */}
       <div
         aria-hidden
         className="absolute left-1/2 -translate-x-1/2 rounded-full"
@@ -195,6 +204,6 @@ export function Tile({ tile, size = 56, selected, onClick }: TileProps) {
             "radial-gradient(ellipse at center, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0) 70%)",
         }}
       />
-    </button>
+    </Tag>
   );
 }

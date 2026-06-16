@@ -1,38 +1,61 @@
 @import "tailwindcss";
 
-@theme {
-  /* rumiCUBE palette — concrete neutrals + saturated tile colors */
-  --color-bg: #0e0e0e;
-  --color-bg-elev: #181818;
-  --color-bg-card: #1f1f1f;
-  --color-border: #2a2a2a;
-  --color-text: #f0f0f0;
-  --color-text-dim: #888888;
-  --color-text-mute: #555555;
-
-  /* Tile colors — punchy, distinct from each other */
-  --color-tile-red: #e53935;
-  --color-tile-blue: #1e88e5;
-  --color-tile-black: #1a1a1a;
-  --color-tile-orange: #fb8c00;
-  --color-tile-joker: #b8a06b;
-
-  --color-tile-red-edge: #8e1715;
-  --color-tile-blue-edge: #0d4e8c;
-  --color-tile-black-edge: #050505;
-  --color-tile-orange-edge: #a45800;
-  --color-tile-joker-edge: #6e5d3a;
-
-  --color-tile-face: #f5f1e8;
-
-  /* Typography */
-  --font-mono: 'JetBrains Mono', 'IBM Plex Mono', ui-monospace, monospace;
-  --font-display: 'Space Grotesk', system-ui, sans-serif;
-  --font-body: 'Inter Tight', system-ui, sans-serif;
+/* Self-hosted Cabinet Grotesk (display typeface, identity-critical).
+ * See public/fonts/LICENSE-Cabinet-Grotesk.txt for the Fontshare license.
+ */
+@font-face {
+  font-family: 'Cabinet Grotesk';
+  src: url('/fonts/CabinetGrotesk-Extrabold.woff2') format('woff2');
+  font-weight: 800;
+  font-display: swap;
+  font-style: normal;
 }
 
-/* Web fonts */
-@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter+Tight:wght@400;500;600&family=JetBrains+Mono:wght@500;700&display=swap');
+@theme {
+  /* Neutrals: substrate */
+  --color-bg:         #0A0A0B;
+  --color-bg-elev:    #0F0F11;
+  --color-surface:    #141416;
+  --color-surface-2:  #1A1A1D;
+  --color-border:     #1F1F22;
+  --color-border-hi:  #2A2A2F;
+
+  /* Text: cream tied to tile-face for cube-as-material continuity */
+  --color-text:       #F5F2EA;
+  --color-text-dim:   #8C8B85;
+  --color-text-mute:  #525153;
+
+  /* Signature accent: single brand color, used sparingly (~5% of pixels) */
+  --color-accent:       #C7F23D;
+  --color-accent-edge:  #8FB31E;
+  --color-accent-glow:  rgba(199, 242, 61, 0.35);
+
+  /* Tile colors: RESERVED for tiles only, never chrome */
+  --color-tile-red:        #E53935;
+  --color-tile-blue:       #1E88E5;
+  --color-tile-black:      #1A1A1A;
+  --color-tile-orange:     #FB8C00;
+  --color-tile-joker:      #B8A06B;
+
+  --color-tile-red-edge:    #8E1715;
+  --color-tile-blue-edge:   #0D4E8C;
+  --color-tile-black-edge:  #050505;
+  --color-tile-orange-edge: #A45800;
+  --color-tile-joker-edge:  #6E5D3A;
+
+  --color-tile-face: #F5F2EA;
+
+  /* Typography */
+  --font-display: 'Cabinet Grotesk', system-ui, sans-serif;
+  --font-body:    'Geist', system-ui, sans-serif;
+  --font-mono:    'JetBrains Mono', ui-monospace, monospace;
+}
+
+/* Body + display fonts loaded from Google Fonts. Only the weights actually
+ * referenced in DESIGN.md ship (4 weights instead of 10 to keep the payload
+ * under 130 KB compressed).
+ */
+@import url('https://fonts.googleapis.com/css2?family=Geist:wght@400;500&family=JetBrains+Mono:wght@500&display=swap');
 
 html, body {
   background: var(--color-bg);
@@ -49,7 +72,7 @@ html, body {
   min-height: 100vh;
 }
 
-/* Cube stage: enables 3D perspective for tile groups */
+/* Cube stage: 3D perspective for tile groups */
 .cube-stage {
   perspective: 1200px;
   perspective-origin: 50% 35%;

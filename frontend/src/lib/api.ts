@@ -122,9 +122,10 @@ export const api = {
       body: JSON.stringify({ new_board }),
     }),
 
-  suggest: (id: string, use_ilp = false) =>
+  suggest: (id: string, use_ilp = false, signal?: AbortSignal) =>
     request<SuggestResponse>(
       `/games/${id}/suggest${use_ilp ? "?use_ilp=true" : ""}`,
+      signal ? { signal } : undefined,
     ),
 
   probabilities: (id: string) =>
